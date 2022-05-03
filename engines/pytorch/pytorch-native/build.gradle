@@ -12,6 +12,8 @@ if (project.hasProperty("pt_version") && project.property("pt_version") != "") {
 }
 boolean isRelease = project.hasProperty("release") || project.hasProperty("staging")
 boolean isPrecxx11 = project.hasProperty("precxx11")
+boolean isAarch64 = project.hasProperty("aarch64") || System.properties["os.arch"] == "aarch64"
+
 String FLAVOR = "cpu"
 if (project.hasProperty("cu10")) {
     FLAVOR = "cu102"
@@ -26,15 +28,16 @@ String BINARY_ROOT = "${project.buildDir}/download"
 
 version = VERSION + (isRelease ? "" : "-SNAPSHOT")
 
-def downloadBuild(String ver, String os, String flavor, Boolean isPrecxx11 = false) {
+def downloadBuild(String ver, String os, String flavor, Boolean isPrecxx11 = false, Boolean isAarch64 = false) {
+    def arch = isAarch64 ? "aarch64" : "x86_64"
     exec {
         if (os == "win") {
             commandLine "${project.projectDir}/build.cmd", "${ver}", "${flavor}"
         } else {
             if (isPrecxx11) {
-                commandLine 'bash', 'build.sh', "${ver}", "${flavor}", "precxx11"
+                commandLine 'bash', 'build.sh', "${ver}", "${flavor}", "precxx11", "${arch}"
             } else {
-                commandLine 'bash', 'build.sh', "${ver}", "${flavor}"
+                commandLine 'bash', 'build.sh', "${ver}", "${flavor}", "cxx11", "${arch}"
             }
         }
     }
@@ -43,7 +46,7 @@ def downloadBuild(String ver, String os, String flavor, Boolean isPrecxx11 = fal
     // the reason why we duplicate the folder here is to insert djl_version into the path
     // so different versions of JNI wouldn't override each other. We don't also want publishDir
     // to have djl_version as engine would require to know that during the System.load()
-    String classifier = "${os}-x86_64"
+    String classifier = "${os}-${arch}"
     String ciDir = "${project.projectDir}/jnilib/${djl_version}/${classifier}/${flavor}"
     if (isPrecxx11) {
         ciDir = "${ciDir}-precxx11"
@@ -73,7 +76,8 @@ def downloadBuildAndroid(String ver) {
 }
 
 def prepareNativeLib(String binaryRoot, String ver) {
-    def url = "https://download.pytorch.org/libtorch"
+    def officialPytorchUrl = "https://download.pytorch.org/libtorch"
+    def aarch64PytorchUrl = "https://djl-ai.s3.amazonaws.com/publish/pytorch"
     String cu11
     if (ver.startsWith("1.8.") || ver.startsWith("1.9.")) {
         cu11 = "cu111"
@@ -87,12 +91,21 @@ def prepareNativeLib(String binaryRoot, String ver) {
             "cpu/libtorch-win-shared-with-deps-${ver}%2Bcpu.zip"              : "cpu/win-x86_64",
             "cu102/libtorch-cxx11-abi-shared-with-deps-${ver}%2Bcu102.zip"    : "cu102/linux-x86_64",
             "${cu11}/libtorch-cxx11-abi-shared-with-deps-${ver}%2B${cu11}.zip": "${cu11}/linux-x86_64",
-            "cu102/libtorch-win-shared-with-deps-${ver}%2Bcu102.zip"          : "cu102/win-x86_64",
             "${cu11}/libtorch-win-shared-with-deps-${ver}%2B${cu11}.zip"      : "${cu11}/win-x86_64",
             "cpu/libtorch-shared-with-deps-${ver}%2Bcpu.zip"                  : "cpu-precxx11/linux-x86_64",
             "${cu11}/libtorch-shared-with-deps-${ver}%2B${cu11}.zip"          : "${cu11}-precxx11/linux-x86_64"
     ]
-    files.each { entry ->
+
+    def aarch64Files = [
+            "${ver}/libtorch-shared-with-deps-${ver}-aarch64.zip": "cpu-precxx11/linux-aarch64"
+    ]
+
+    copyNativeLibToOutputDir(files, binaryRoot, officialPytorchUrl)
+    copyNativeLibToOutputDir(aarch64Files, binaryRoot, aarch64PytorchUrl)
+}
+
+def copyNativeLibToOutputDir(Map<String, String> fileStoreMap, String binaryRoot, String url) {
+    fileStoreMap.each { entry ->
         project.logger.lifecycle("Downloading ${url}/${entry.key}")
         def outputDir = new File("${binaryRoot}/${entry.value}")
         def file = new File("${outputDir}/libtorch.zip")
@@ -116,7 +129,7 @@ def prepareNativeLib(String binaryRoot, String ver) {
             }
             into("${outputDir}/native/lib")
         }
-        if (entry.value.contains("-precxx11")) {
+        if (entry.value.contains("-precxx11") && !entry.value.contains("aarch64")) {
             def libstd = new File("${outputDir}/native/lib/libstdc++.so.6")
             new URL("https://publish.djl.ai/extra/libstdc%2B%2B.so.6").withInputStream {
                 i -> libstd.withOutputStream { it << i }
@@ -148,9 +161,9 @@ task compileJNI {
         if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("windows")) {
             downloadBuild("${VERSION}", "win", "${FLAVOR}")
         } else if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("mac")) {
-            downloadBuild("${VERSION}", "osx", "${FLAVOR}")
+            downloadBuild("${VERSION}", "osx", "${FLAVOR}", false, isAarch64)
         } else if (System.properties['os.name'].toLowerCase(Locale.ROOT).contains("linux")) {
-            downloadBuild("${VERSION}", "linux", "${FLAVOR}", isPrecxx11)
+            downloadBuild("${VERSION}", "linux", "${FLAVOR}", isPrecxx11, isAarch64)
         } else {
             throw new IllegalStateException("Unknown Architecture " + System.properties['os.name'] + "-${FLAVOR}")
         }
@@ -227,7 +240,7 @@ task downloadPyTorchNativeLib() {
 task uploadS3 {
     doLast {
         delete "${BINARY_ROOT}"
-        prepareNativeLib("${BINARY_ROOT}", "${version}")
+        prepareNativeLib("${BINARY_ROOT}", "${VERSION}")
 
         exec {
             commandLine "sh", "-c", "find ${BINARY_ROOT} -type f | xargs gzip"
@@ -237,9 +250,9 @@ task uploadS3 {
                 "${BINARY_ROOT}/cpu/linux-x86_64/native/lib/",
                 "${BINARY_ROOT}/cpu/osx-x86_64/native/lib/",
                 "${BINARY_ROOT}/cpu/win-x86_64/native/lib/",
+                "${BINARY_ROOT}/cpu-precxx11/linux-aarch64/native/lib/",
                 "${BINARY_ROOT}/cpu-precxx11/linux-x86_64/native/lib/",
                 "${BINARY_ROOT}/cu102/linux/native/lib/",
-                "${BINARY_ROOT}/cu102/win-x86_64/native/lib/",
                 "${BINARY_ROOT}/cu113/linux-x86_64/native/lib/",
                 "${BINARY_ROOT}/cu113/win-x86_64/native/lib/",
                 "${BINARY_ROOT}/cu113-precxx11/linux-x86_64/native/lib/"
@@ -268,7 +281,7 @@ flavorNames.each { flavor ->
     platformNames.each { osName ->
         tasks.create(name: "${flavor}-${osName}Jar", type: Jar) {
             doFirst {
-                def propFile = file("${BINARY_ROOT}/${flavor}/${osName}/native/lib/pytorch.properties")
+                def propFile = file("${BINARY_ROOT}/pytorch.properties")
                 propFile.delete()
                 def dsStore = file("${BINARY_ROOT}/${flavor}/${osName}/native/lib/.DS_Store")
                 dsStore.delete()
@@ -300,8 +313,13 @@ flavorNames.each { flavor ->
                     libstd.text = new URL("https://publish.djl.ai/extra/THIRD-PARTY-LICENSES_qHnMKgbdWa.txt").text
                 }
             }
-            from file("${BINARY_ROOT}/${flavor}/${osName}")
-            from file("src/main/resources")
+            from("${BINARY_ROOT}/${flavor}/${osName}/native/lib") {
+                into("pytorch/${flavor}/${osName}")
+            }
+            from("${BINARY_ROOT}/pytorch.properties") {
+                into("native/lib")
+            }
+            from "src/main/resources"
             archiveClassifier = "${osName}"
 
             manifest {

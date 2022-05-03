@@ -2,8 +2,6 @@
 ![DeepJavaLibrary](website/img/deepjavalibrary.png?raw=true "Deep Java Library")
 
 ![Continuous](https://github.com/deepjavalibrary/djl/workflows/Continuous/badge.svg)
-![Continuous PyTorch](https://github.com/deepjavalibrary/djl/workflows/Continous%20PyTorch/badge.svg)
-![Continuous Tensorflow](https://github.com/deepjavalibrary/djl/workflows/Continuous%20Tensorflow/badge.svg)
 ![Docs](https://github.com/deepjavalibrary/djl/workflows/Docs/badge.svg)
 ![Nightly Publish](https://github.com/deepjavalibrary/djl/workflows/Nightly%20Publish/badge.svg)
 
@@ -88,6 +86,7 @@ The following pseudocode demonstrates running training:
 
 ## Release Notes
 
+* [0.16.0](https://github.com/deepjavalibrary/djl/releases/tag/v0.16.0) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.16.0))
 * [0.15.0](https://github.com/deepjavalibrary/djl/releases/tag/v0.15.0) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.15.0))
 * [0.14.0](https://github.com/deepjavalibrary/djl/releases/tag/v0.14.0) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.14.0))
 * [0.13.0](https://github.com/deepjavalibrary/djl/releases/tag/v0.13.0) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.13.0))
@@ -102,6 +101,8 @@ The following pseudocode demonstrates running training:
 * [0.3.0](https://github.com/deepjavalibrary/djl/releases/tag/v0.3.0) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.3.0))
 * [0.2.1](https://github.com/deepjavalibrary/djl/releases/tag/v0.2.1) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.2.1))
 * [0.2.0 Initial release](https://github.com/deepjavalibrary/djl/releases/tag/v0.2.0) ([Code](https://github.com/deepjavalibrary/djl/tree/v0.2.0))
+
+The release of DJL 0.17.0 is planned for April or May 2022.
 
 ## Building From Source
 

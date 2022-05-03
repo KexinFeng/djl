@@ -12,6 +12,7 @@
  */
 package ai.djl.paddlepaddle.jni;
 
+import ai.djl.util.ClassLoaderUtils;
 import ai.djl.util.Platform;
 import ai.djl.util.Utils;
 import java.io.File;
@@ -23,7 +24,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -106,12 +106,17 @@ public final class LibUtils {
 
     public static void loadWindowsDependencies(String libName) {
         Path libDir = Paths.get(libName).getParent();
-        List<String> names = Collections.singletonList("openblas.dll");
+        List<String> names = Arrays.asList("openblas.dll", "mkldnn.dll");
         names.forEach(
                 name -> {
-                    String lib = libDir.resolve(name).toAbsolutePath().toString();
-                    logger.debug("Now loading " + lib);
-                    System.load(libDir.resolve(name).toAbsolutePath().toString());
+                    Path path = libDir.resolve(name);
+                    if (Files.isRegularFile(path)) {
+                        String lib = path.toAbsolutePath().toString();
+                        logger.debug("Now loading " + lib);
+                        System.load(lib);
+                    } else {
+                        logger.debug(name + " is not found, skip loading...");
+                    }
                 });
     }
 
@@ -143,14 +148,11 @@ public final class LibUtils {
 
         Path tmp = null;
         // Paddle GPU and CPU share the same jni so file
-        String libPath = "/jnilib/" + classifier + "/cpu/" + name;
-        try (InputStream stream = LibUtils.class.getResourceAsStream(libPath)) {
+        String libPath = "jnilib/" + classifier + "/cpu/" + name;
+        try (InputStream is = ClassLoaderUtils.getResourceAsStream(libPath)) {
             logger.info("Extracting {} to cache ...", libPath);
-            if (stream == null) {
-                throw new IllegalStateException("Paddle jni not found: " + libPath);
-            }
             tmp = Files.createTempFile(nativeDir, "jni", "tmp");
-            Files.copy(stream, tmp, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(is, tmp, StandardCopyOption.REPLACE_EXISTING);
             Utils.moveQuietly(tmp, path);
             return path.toAbsolutePath().toString();
         } catch (IOException e) {
@@ -191,17 +193,17 @@ public final class LibUtils {
             Files.createDirectories(cacheFolder);
             tmp = Files.createTempDirectory(cacheFolder, "tmp");
             for (String file : platform.getLibraries()) {
-                String libPath = "/native/lib/" + file;
+                String libPath = "native/lib/" + file;
                 logger.info("Extracting {} to cache ...", file);
                 if (file.endsWith(".gz")) {
                     // FIXME: temporary workaround for paddlepaddle-native-cu102:2.0.2
                     String f = file.substring(0, file.length() - 3);
                     try (InputStream is =
-                            new GZIPInputStream(LibUtils.class.getResourceAsStream(libPath))) {
+                            new GZIPInputStream(ClassLoaderUtils.getResourceAsStream(libPath))) {
                         Files.copy(is, tmp.resolve(f), StandardCopyOption.REPLACE_EXISTING);
                     }
                 } else {
-                    try (InputStream is = LibUtils.class.getResourceAsStream(libPath)) {
+                    try (InputStream is = ClassLoaderUtils.getResourceAsStream(libPath)) {
                         Files.copy(is, tmp.resolve(file), StandardCopyOption.REPLACE_EXISTING);
                     }
                 }
