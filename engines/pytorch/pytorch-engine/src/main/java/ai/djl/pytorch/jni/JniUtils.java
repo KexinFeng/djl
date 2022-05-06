@@ -357,7 +357,7 @@ public final class JniUtils {
                 ndArray.getManager(),
                 PyTorchLibrary.LIB.torchTake(ndArray.getHandle(), index.getHandle()));
     }
-
+  
     public static PtNDArray pick(PtNDArray ndArray, PtNDArray index, long dim) {
         Shape indexShape = index.getShape();
         Shape ndShape = ndArray.getShape();
