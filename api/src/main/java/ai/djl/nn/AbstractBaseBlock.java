@@ -72,9 +72,8 @@ public abstract class AbstractBaseBlock implements Block {
             NDList inputs,
             boolean training,
             PairList<String, Object> params) {
-        NDManager paramsManager = parameterStore.getManager();
         if (training && !isInitialized()) {
-            initialize(paramsManager, DataType.FLOAT32, inputs.getShapes());
+            initialize(parameterStore.getManager(), DataType.FLOAT32, inputs.getShapes());
         }
         return forwardInternal(parameterStore, inputs, training, params);
     }
