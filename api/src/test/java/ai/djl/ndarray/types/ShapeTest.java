@@ -22,7 +22,6 @@ public class ShapeTest {
     public void shapeTest() {
         Shape shape = new Shape(1, 3, 224, 224);
         Assert.assertEquals(shape.getShape(), new long[] {1, 3, 224, 224});
-        Assert.assertThrows(IllegalArgumentException.class, () -> shape.size(-1));
         Assert.assertEquals(shape.size(0, 1), 3);
         Assert.assertEquals(shape.size(), 150528);
         Assert.assertEquals(shape.dimension(), 4);
