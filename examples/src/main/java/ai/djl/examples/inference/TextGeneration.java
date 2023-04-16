@@ -40,9 +40,8 @@ public final class TextGeneration {
                     "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/gpt2_onnx/decoder_model_merged.onnx"
                 };
 
-        try (LMAdapter generator =
-                        Engine.getEngine("OnnxRuntime").newLMAdapter("GPT2", modelUrls);
-             NDManager manager = NDManager.newBaseManager()) {
+        try (LMAdapter generator = Engine.getEngine("OnnxRuntime").newLMAdapter("GPT2", modelUrls);
+                NDManager manager = NDManager.newBaseManager()) {
 
             /////////////////////////////////////////////
             // Inference without cached key_values input
@@ -106,7 +105,7 @@ public final class TextGeneration {
         };
 
         try (LMAdapter generator = Engine.getEngine("PyTorch").newLMAdapter("GPT2", modelUrls);
-             NDManager manager = NDManager.newBaseManager()) {
+                NDManager manager = NDManager.newBaseManager()) {
 
             /////////////////////////////////////////////
             // Inference without cached key_values input
