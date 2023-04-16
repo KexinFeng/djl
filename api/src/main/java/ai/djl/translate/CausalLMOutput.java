@@ -11,13 +11,14 @@ public class CausalLMOutput {
     // |inputIds|
     public NDArray logits;
 
-    // (k, v) * numLayer, k or v: [batch, heads, seq_past, feature]
-    // The cache of past sequence. seq-dim-size == |past_seq| + |inputIds|
-    public NDList pastKeyValuesList;
-
     // [batch, seq, dim] * (layers+1) -> take -1
     // The vec. rep. of a sequence that ends at an element in seq-dim. seq-dim-size = |inputIds|
     public NDList allHiddenStates;
+
+    // (k, v) * numLayer,
+    // k or v: [batch, heads, seq_past, feature]
+    // The cache of past sequence. seq-dim-size == |past_seq| + |inputIds|
+    public NDList pastKeyValuesList;
 
     public CausalLMOutput(NDArray logits, NDList pastKeyValues) {
         this.logits = logits;
