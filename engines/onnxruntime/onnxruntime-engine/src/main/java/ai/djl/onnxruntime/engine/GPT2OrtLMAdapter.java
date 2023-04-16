@@ -60,11 +60,11 @@ public class GPT2OrtLMAdapter implements LMAdapter {
 
     private NDList dummyPastKeyValues(NDArray inputIds, NDManager manager) {
         long numBatch = inputIds.getShape().get(0);
-        long hiddenSize = config.logitsSize;
-        long numAttentionHeads = config.numAttentionHeads;
+        long kvDim = config.kvDim;
+        int numAttentionHeads = config.numAttentionHeads;
         int numLayers = config.numLayers;
 
-        NDArray keyOrValue = manager.zeros(new Shape(numBatch, numAttentionHeads, 1, hiddenSize));
+        NDArray keyOrValue = manager.zeros(new Shape(numBatch, numAttentionHeads, 1, kvDim));
         NDList output = new NDList();
         output.addAll(Collections.nCopies(2 * numLayers, keyOrValue));
         return output;

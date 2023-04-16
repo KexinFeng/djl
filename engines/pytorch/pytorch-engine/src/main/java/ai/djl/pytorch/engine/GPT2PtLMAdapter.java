@@ -28,6 +28,7 @@ import ai.djl.translate.LMAdapter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class GPT2PtLMAdapter implements LMAdapter {
@@ -80,11 +81,12 @@ public class GPT2PtLMAdapter implements LMAdapter {
                                     });
         }
         NDList output = resultIValue.toNDList(manager);
+        Arrays.stream(inputNative).forEach(IValue::close);
 
-        manager.attachInternal("inputNative", inputNative);
-        manager.attachInternal("resultIValue", resultIValue);
-
-        return new CausalLMOutput(output.get(0), output.subNDList(1));
+        return new CausalLMOutput(
+                output.get(0),
+                output.subList(1, config.numLayers * 2 + 1),
+                output.subNDList(2 + config.numLayers));
     }
 
     @Override

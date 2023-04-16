@@ -30,8 +30,8 @@ public final class TextGeneration {
     private TextGeneration() {}
 
     public static void main(String[] args) {
-        mainOnnx(args);
-        mainPt(args);
+                mainOnnx(args);
+//        mainPt(args);
     }
 
     public static void mainOnnx(String[] args) {
@@ -100,8 +100,8 @@ public final class TextGeneration {
 
     public static void mainPt(String[] args) {
         String[] modelUrls = {
-            "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/transformer/traced_GPT2_init.pt",
-            "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/transformer/traced_GPT2.pt"
+            "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/transformer/traced_GPT2_init_hidden.pt",
+            "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/transformer/traced_GPT2_hidden.pt"
         };
 
         try (LMAdapter generator = Engine.getEngine("PyTorch").newLMAdapter("GPT2", modelUrls);
