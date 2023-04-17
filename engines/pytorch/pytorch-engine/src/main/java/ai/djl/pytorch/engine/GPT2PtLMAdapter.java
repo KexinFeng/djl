@@ -36,9 +36,10 @@ public class GPT2PtLMAdapter implements LMAdapter {
     List<ZooModel<NDList, NDList>> models;
     GPTConfig config;
 
-    public GPT2PtLMAdapter(String[] modelUrls)
+    public GPT2PtLMAdapter(GPTConfig gptConfig)
             throws ModelNotFoundException, MalformedModelException, IOException {
-        config = new GPTConfig();
+        String[] modelUrls = gptConfig.modelUrls;
+        config = gptConfig;
 
         blocks = new Block[modelUrls.length];
         models = new ArrayList<>();

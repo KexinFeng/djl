@@ -37,9 +37,10 @@ public class GPT2OrtLMAdapter implements LMAdapter {
     List<ZooModel<NDList, NDList>> models;
     GPTConfig config;
 
-    public GPT2OrtLMAdapter(String[] modelUrls)
+    public GPT2OrtLMAdapter(GPTConfig gptConfig)
             throws ModelNotFoundException, MalformedModelException, IOException {
-        config = new GPTConfig();
+        String[] modelUrls = gptConfig.modelUrls;
+        config = gptConfig;
 
         // modelUrl can be replaced to local onnx model file
         blocks = new Block[modelUrls.length];

@@ -19,7 +19,6 @@ import ai.djl.ndarray.index.NDIndex;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 
-import java.io.IOException;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -27,19 +26,22 @@ public class LMSearch {
 
     private LMAdapter lmAdapter;
 
-    public NDList contrastiveSearch(
+    public LMSearch(LMAdapter lmAdapter) {
+        this.lmAdapter = lmAdapter;
+    }
+
+    public NDArray contrastiveSearch(
             NDManager manager,
             NDArray inputIds,
             NDArray attentionMask,
-            int k,
-            float alpha,
-            int maxSeqLength) {
+            long[][] attentionMaskSlices, // [batch, startIndex, inputIds.getShape.get(1)-1]
+            SearchConfig config) {
         // inputIds: [batchSize, seqLength: t_init]
         // attentionMask: [batchSize, pastSeq]. seq-dim-size = |past_seq| + |inputIds|.
-        NDList result = new NDList((int) inputIds.getShape().get(0));
-//        result.add(manager.create(new int[]{1, 2}, new Shape(2)));
-//        result.set(1, manager.create(new int[]{1}));
-        NDArray activeBatchIdx = manager.arange(inputIds.getShape().get(0)).reshape(-1, 1);
+
+        //        NDList result = new NDList((int) inputIds.getShape().get(0));
+        //        NDArray unfinishedBatchIndex =
+        // manager.arange(inputIds.getShape().get(0)).reshape(-1, 1);
 
         SearchState searchState = new SearchState();
         while (true) {
@@ -60,7 +62,8 @@ public class LMSearch {
             // (1) candidate tokens recall;
             // (2) candidate re-rank by degeneration penalty
 
-            NDArray topKIds = searchState.logits.topK(k, -1, true, false).get(1); // [batch, topK]
+            NDArray topKIds =
+                    searchState.logits.topK(config.k, -1, true, false).get(1); // [batch, topK]
 
             // Generate model inputs and put candidates together into batch
             // [batch, topK] -> [batch * [topK]] -> [[batch * [topK]], seqLength=1]
@@ -71,103 +74,115 @@ public class LMSearch {
 
             // [batch, heads, seq_past, feature] -> [batch * topK, head, seq_past, feature]
             NDList kCopyPastKeyValues =
-                    (NDList)
+                    new NDList(
                             searchState.pastKeyValues.stream()
-                                    .map(ndarray -> ndarray.repeat(0, k))
-                                    .collect(Collectors.toList());
+                                    .map(ndarray -> ndarray.repeat(0, config.k))
+                                    .collect(Collectors.toList()));
             assert kCopyPastKeyValues.get(0).getDataType() == DataType.FLOAT32
                     : "inputIds datatype should be Float32";
 
             // [batch, seq_past] -> [batch * topK, seq_past] -> [batch * topK, seq_past + 1]
             long numBatch = topKIds.getShape().get(0);
-            NDArray kCopyPastAttentionMask = searchState.pastAttentionMask.repeat(0, k);
+            NDArray kCopyPastAttentionMask = searchState.pastAttentionMask.repeat(0, config.k);
             kCopyPastAttentionMask =
                     kCopyPastAttentionMask.concat(
-                            manager.ones(new Shape(numBatch * k, 1), DataType.INT64), 1);
+                            manager.ones(new Shape(numBatch * config.k, 1), DataType.INT64), 1);
             assert kCopyPastKeyValues.get(0).getShape().size(-2)
-                    == kCopyPastAttentionMask.getShape().size(-1) + 1
+                            == kCopyPastAttentionMask.getShape().size(-1) + 1
                     : "attentionMask_seq = past_seq + new_input_seq";
 
-            // Forward with candidate batch input
+            // Forward with candidates in batch input
             NDList candidateModelInput =
                     prepareInput(
                             candidateInputIds, kCopyPastAttentionMask, kCopyPastKeyValues, manager);
             CausalLMOutput candidateOutput =
                     lmAdapter.forward(candidateModelInput, kCopyPastKeyValues, manager);
 
-            NDArray outputIds =
-                    StepGen.ConstrastStepGen(
+            NDArray selectIndex =
+                    StepGeneration.ConstrastStepGeneration(
                             topKIds,
-                            searchState.pastAttentionMask, // replaced with initial attentionMask
                             searchState.logits,
                             searchState.pastHiddenStates,
                             candidateOutput.allHiddenStates.get(-1),
-                            alpha);
+                            attentionMaskSlices,
+                            config.alpha);
 
-            // Update searchState
-            assert candidateOutput.logits.getShape().get(1) == 1
-                    : "dimension check: here, outputLogits corresponds to inputSeq == 1";
+            // Update searchState for next loop
+            searchState = updateSearchState(searchState, candidateOutput, topKIds, selectIndex, manager);
 
-            long logitsDim = searchState.logits.getShape().get(1);
-            long pastSeqLength = searchState.outputIds.getShape().get(1);
-            long numHeads = searchState.pastKeyValues.get(0).getShape().get(1);
-            long kvDim = searchState.pastKeyValues.get(0).getShape().get(3);
-            long hiddenDim = searchState.pastHiddenStates.getShape().get(2);
-            NDIndex selectIndex =
-                    new NDIndex(
-                            "{}, {}, ...",
-                            manager.arange(0, numBatch, 1, DataType.INT64),
-                            outputIds.flatten());
-
-            // Select from candidateOutput
-            // [batch, k, logitsDim] * [batch,] -> [batch, logitDim]
-            NDArray nextLogits =
-                    candidateOutput.logits.reshape(numBatch, k, logitsDim).get(selectIndex);
-
-            // Select from candidateOutput
-            // [batch * k, heads, seq_past, feature]
-            Function<NDArray, NDArray> fn =
-                    ndarray ->
-                            ndarray.reshape(numBatch, k, numHeads, pastSeqLength + 1, kvDim)
-                                    .get(selectIndex);
-            NDList nextPastKeyValue =
-                    (NDList)
-                            candidateOutput.pastKeyValuesList.stream()
-                                    .map(fn)
-                                    .collect(Collectors.toList());
-
-            // To be concatenated into searchState.pastHiddenStates
-            // [batch * k, 1, hiddenDim]
-            NDArray newHiddenState = candidateOutput.allHiddenStates.get(-1);
-            assert newHiddenState.getManager() == manager : "possible leaky memory";
-            NDArray nextPastHiddenStates =
-                    searchState.pastHiddenStates.concat(
-                            newHiddenState.reshape(numBatch, k, 1, hiddenDim).get(selectIndex), 1);
-
-            // To be concatenated into searchState.outputIds
-            // [batch, seq_past]
-            NDArray nextOutputIds = searchState.outputIds.concat(outputIds, 1);
-
-            NDArray nextPastAttentionMask =
-                    searchState.pastAttentionMask.concat(
-                            manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
-
-            searchState =
-                    new SearchState(
-                            nextLogits,
-                            nextPastKeyValue,
-                            nextPastHiddenStates,
-                            nextOutputIds,
-                            nextPastAttentionMask); // can be spared.
-
-            // <EOS>, delete the sentence and add it to result.
-            if (searchState.outputIds.getShape().get(1) >= maxSeqLength) {
+            // TODO: <EOS>, delete the sentence and add it to result.
+            if (searchState.pastOutputIds.getShape().get(1) >= config.maxSeqLength) {
                 break;
             }
         }
 
-//        searchState.outputIds;
-        return result;
+        return searchState.pastOutputIds;
+    }
+
+    private SearchState updateSearchState(
+            SearchState searchState,
+            CausalLMOutput candidateOutput,
+            NDArray topKIds,
+            NDArray select,
+            NDManager manager) {
+        // Update searchState for next iteration
+        assert candidateOutput.logits.getShape().get(1) == 1
+                : "dimension check: here, outputLogits corresponds to inputSeq == 1";
+        long numBatch = searchState.logits.getShape().get(0);
+        long logitsDim = searchState.logits.getShape().get(1);
+        long pastSeqLengthPriorUpdate = searchState.pastOutputIds.getShape().get(1);
+        long numHeads = searchState.pastKeyValues.get(0).getShape().get(1);
+        long kvDim = searchState.pastKeyValues.get(0).getShape().get(3);
+        long hiddenDim = searchState.pastHiddenStates.getShape().get(2);
+        long k = candidateOutput.logits.getShape().get(0) / numBatch;
+        NDIndex selectIndex =
+                new NDIndex(
+                        "{}, {}, ...",
+                        manager.arange(0, numBatch, 1, DataType.INT64),
+                        select.flatten());
+
+        // Take from candidateOutput
+        // [batch, k, inputSeq=1, logitsDim] -select-> [batch, logitDim]
+        NDArray nextLogits =
+                candidateOutput.logits.reshape(numBatch, k, logitsDim).get(selectIndex);
+
+        // Take from candidateOutput
+        // [batch * k, heads, seq_past, feature] -select-> [batch, heads, seq_past, feature]
+        Function<NDArray, NDArray> fn =
+                ndarray ->
+                        ndarray.reshape(numBatch, k, numHeads, pastSeqLengthPriorUpdate + 1, kvDim)
+                                .get(selectIndex);
+        NDList nextPastKeyValue =
+                new NDList(
+                        candidateOutput.pastKeyValuesList.stream()
+                                .map(fn)
+                                .collect(Collectors.toList()));
+
+        // To be concatenated into searchState.pastHiddenStates
+        // [batch * k, inputSeq=1, hiddenDim]
+        NDArray newHiddenState = candidateOutput.allHiddenStates.get(-1);
+        assert newHiddenState.getManager() == manager : "possible leaky memory";
+        NDArray nextPastHiddenStates =
+                searchState.pastHiddenStates.concat(
+                        newHiddenState.reshape(numBatch, k, 1, hiddenDim).get(selectIndex), 1);
+
+        // To be concatenated into searchState.outputIds
+        // [batch, topK]
+        NDArray outputIds = topKIds.get(selectIndex);
+        // [batch, seq_past]
+        NDArray nextOutputIds = searchState.pastOutputIds.concat(outputIds.reshape(numBatch, 1), 1);
+
+        // [batch, seq_past]
+        NDArray nextPastAttentionMask =
+                searchState.pastAttentionMask.concat(
+                        manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
+
+        return new SearchState(
+                nextLogits,
+                nextPastKeyValue,
+                nextPastHiddenStates,
+                nextOutputIds,
+                nextPastAttentionMask); // can be spared.
     }
 
     private NDList prepareInput(
@@ -187,8 +202,6 @@ public class LMSearch {
 }
 
 class SearchState {
-    public int pastSeqLen;
-
     // [batch, cls]. Only the last logits, used to recall candidate token
     public NDArray logits;
 
@@ -206,7 +219,7 @@ class SearchState {
     public NDList pastKeyValues;
 
     // [batch, seq_past]. seq-dim-size == |past_seq| + |inputIds|. Will grow.
-    public NDArray outputIds;
+    public NDArray pastOutputIds;
 
     SearchState() {}
 
@@ -214,31 +227,34 @@ class SearchState {
             NDArray logits,
             NDList pastKeyValues,
             NDArray pastHiddenStates,
-            NDArray outputIds,
+            NDArray pastOutputIds,
             NDArray pastAttentionMask) {
         this.logits = logits;
         this.pastKeyValues = pastKeyValues;
         this.pastHiddenStates = pastHiddenStates;
-        this.outputIds = outputIds;
+        this.pastOutputIds = pastOutputIds;
         this.pastAttentionMask = pastAttentionMask;
     }
 }
 
-final class StepGen {
-    private StepGen() {}
+final class StepGeneration {
+    private StepGeneration() {}
 
-    public static NDArray ConstrastStepGen(
+    public static NDArray ConstrastStepGeneration(
             NDArray topKIds,
-            NDArray attentionMask, // can use initial attentionMask
             NDArray logits,
             NDArray contextHiddenStates,
             NDArray topkHiddenStates,
+            long[][] attentionMaskSlices,
             float alpha) {
-        //  topKIds: [batch, topK]
-        //  attentionMask: [batch, past_seq]
-        //  logits:  [batch, cls]
-        //  contextHiddenStates: [batch, past_seq, dim]
-        //  topkHiddenStates: [batch*topK, seq=1, dim]
+        /*
+          topKIds: [batch, topK]
+          attentionMask: [batch, past_seq]
+          logits:  [batch, cls]
+          contextHiddenStates: [batch, past_seq, dim]
+          topkHiddenStates: [batch*topK, seq=1, dim]
+          attentionMaskSlice: [batch, startIndex, initSeqLength]
+        */
 
         long batch = topKIds.getShape().get(0);
         long topK = topKIds.getShape().get(1);
@@ -247,32 +263,41 @@ final class StepGen {
         // [batch*topK, seq=1, dim] -> [batch, topK, dim]
         topkHiddenStates = topkHiddenStates.reshape(batch, topK, hiddenDim);
 
-        // TODO: add support of Einstein summation:
-        // a = torch.randn(batch, past_seq, dim)
-        // b = torch.randn(batch, topK, dim)
-        // result = torch.einsum('bik,bjk->bij', a, b)
-
         //  [batch, topK, dim] * [batch, past_seq, dim] -> [batch, topK, past_seq]
-        topkHiddenStates.normalize(2, 2);
-        contextHiddenStates.normalize(2, 2);
+        topkHiddenStates = topkHiddenStates.normalize(2, 2);
+        contextHiddenStates = contextHiddenStates.normalize(2, 2);
         NDArray cosSimilarity =
                 topkHiddenStates.batchMatMul(contextHiddenStates.transpose(0, 2, 1));
 
-        // Deactivate entries (batch_idx, :, zero_attention_idx_slice)
+        // Deactivate entries (batch_idx, :, zero_attention_idx_slice) in max{cosSim} step
+        for (int i = 0; i < attentionMaskSlices.length; i++) {
+            cosSimilarity.set(
+                    new NDIndex(
+                            "{}, :, {}:{}",
+                            i,
+                            attentionMaskSlices[i][0],
+                            attentionMaskSlices[i][1]),
+                    -1);
+        }
 
         // [batch, topK, past_seq] -> [batch, topK]
         NDArray topkScorePart1 = cosSimilarity.max(new int[] {2});
         assert topkScorePart1.getShape().getShape().length == 2 : "Wrong output size";
         // [batch, logitDim].gather([batch, topK) -> [batch, topK]
-        NDArray topkScorePart2 = logits.gather(topKIds, 1);
-        NDArray topkScore = topkScorePart1.mul(alpha).add(topkScorePart2.mul(1-alpha));
+        NDArray topkScorePart2 = logits.softmax(1).gather(topKIds, 1);
+        NDArray topkScore = topkScorePart2.mul(1 - alpha).sub(topkScorePart1.mul(alpha));
 
         // [batch, topK] => [batch, 1]
-        NDArray outputIds = topkScore.argMax(1).expandDims(1);
-        assert outputIds.getShape().getShape().length == 2 : "Wrong output size";
+        NDArray selectIndex = topkScore.argMax(1).expandDims(1);
+        assert selectIndex.getShape().getShape().length == 2 : "Wrong output size";
 
-        return outputIds;
+        return selectIndex;
     }
+
+    // TODO: add support of Einstein summation:
+    // a = torch.randn(batch, past_seq, dim)
+    // b = torch.randn(batch, topK, dim)
+    // result = torch.einsum('bik,bjk->bij', a, b)
 
     public static NDArray GreedyStepGen(NDArray logits) {
         return null;

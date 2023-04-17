@@ -16,7 +16,7 @@ public class CausalLMOutput {
     public NDList allHiddenStates;
 
     // (k, v) * numLayer,
-    // k or v: [batch, heads, seq_past, feature]
+    // kv: [batch, heads, seq_past, feature]
     // The cache of past sequence. seq-dim-size == |past_seq| + |inputIds|
     public NDList pastKeyValuesList;
 
