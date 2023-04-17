@@ -43,17 +43,17 @@ public class LMSearch {
         //        NDArray unfinishedBatchIndex =
         // manager.arange(inputIds.getShape().get(0)).reshape(-1, 1);
 
-        SearchState searchState = new SearchState();
+        ContrastiveSearchState searchState = new ContrastiveSearchState();
         while (true) {
             if (searchState.pastKeyValues == null) {
                 NDList modelInput = prepareInput(inputIds, attentionMask, null, manager);
                 CausalLMOutput output = lmAdapter.forward(modelInput, null, manager);
                 NDArray lastLogits = output.logits.get(":, -1, :");
                 searchState =
-                        new SearchState(
+                        new ContrastiveSearchState(
                                 lastLogits,
                                 output.pastKeyValuesList,
-                                output.allHiddenStates.get(-1),
+                                output.allHiddenStates.get(0),
                                 inputIds,
                                 attentionMask);
             }
@@ -103,7 +103,7 @@ public class LMSearch {
                             topKIds,
                             searchState.logits,
                             searchState.pastHiddenStates,
-                            candidateOutput.allHiddenStates.get(-1),
+                            candidateOutput.allHiddenStates.get(0),
                             attentionMaskSlices,
                             config.alpha);
 
@@ -119,8 +119,8 @@ public class LMSearch {
         return searchState.pastOutputIds;
     }
 
-    private SearchState updateSearchState(
-            SearchState searchState,
+    private ContrastiveSearchState updateSearchState(
+            ContrastiveSearchState searchState,
             CausalLMOutput candidateOutput,
             NDList generatedOutput,
             NDManager manager) {
@@ -161,7 +161,7 @@ public class LMSearch {
 
         // To be concatenated into searchState.pastHiddenStates
         // [batch * k, inputSeq=1, hiddenDim]
-        NDArray newHiddenState = candidateOutput.allHiddenStates.get(-1);
+        NDArray newHiddenState = candidateOutput.allHiddenStates.get(0);
         assert newHiddenState.getManager() == manager : "possible leaky memory";
         NDArray nextPastHiddenStates =
                 searchState.pastHiddenStates.concat(
@@ -177,7 +177,7 @@ public class LMSearch {
                 searchState.pastAttentionMask.concat(
                         manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
 
-        return new SearchState(
+        return new ContrastiveSearchState(
                 nextLogits,
                 nextPastKeyValue,
                 nextPastHiddenStates,
@@ -201,7 +201,7 @@ public class LMSearch {
     }
 }
 
-class SearchState {
+class ContrastiveSearchState {
     // [batch, cls]. Only the last logits, used to recall candidate token
     public NDArray logits;
 
@@ -221,9 +221,9 @@ class SearchState {
     // [batch, seq_past]. seq-dim-size == |past_seq| + |inputIds|. Will grow.
     public NDArray pastOutputIds;
 
-    SearchState() {}
+    ContrastiveSearchState() {}
 
-    SearchState(
+    ContrastiveSearchState(
             NDArray logits,
             NDList pastKeyValues,
             NDArray pastHiddenStates,

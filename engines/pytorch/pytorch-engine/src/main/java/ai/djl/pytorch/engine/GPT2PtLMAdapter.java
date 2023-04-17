@@ -87,7 +87,7 @@ public class GPT2PtLMAdapter implements LMAdapter {
         return new CausalLMOutput(
                 output.get(0),
                 output.subList(1, config.numLayers * 2 + 1),
-                output.subNDList(2 + config.numLayers));
+                output.subNDList(config.numLayers * 2 + 2));
     }
 
     @Override
