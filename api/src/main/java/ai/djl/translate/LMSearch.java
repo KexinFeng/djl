@@ -98,7 +98,7 @@ public class LMSearch {
             CausalLMOutput candidateOutput =
                     lmAdapter.forward(candidateModelInput, kCopyPastKeyValues, manager);
 
-            NDArray selectIndex =
+            NDList generatedOutput =
                     StepGeneration.ConstrastStepGeneration(
                             topKIds,
                             searchState.logits,
@@ -108,7 +108,7 @@ public class LMSearch {
                             config.alpha);
 
             // Update searchState for next loop
-            searchState = updateSearchState(searchState, candidateOutput, topKIds, selectIndex, manager);
+            searchState = updateSearchState(searchState, candidateOutput, generatedOutput, manager);
 
             // TODO: <EOS>, delete the sentence and add it to result.
             if (searchState.pastOutputIds.getShape().get(1) >= config.maxSeqLength) {
@@ -122,8 +122,7 @@ public class LMSearch {
     private SearchState updateSearchState(
             SearchState searchState,
             CausalLMOutput candidateOutput,
-            NDArray topKIds,
-            NDArray select,
+            NDList generatedOutput,
             NDManager manager) {
         // Update searchState for next iteration
         assert candidateOutput.logits.getShape().get(1) == 1
@@ -135,6 +134,8 @@ public class LMSearch {
         long kvDim = searchState.pastKeyValues.get(0).getShape().get(3);
         long hiddenDim = searchState.pastHiddenStates.getShape().get(2);
         long k = candidateOutput.logits.getShape().get(0) / numBatch;
+
+        NDArray select = generatedOutput.get(1);
         NDIndex selectIndex =
                 new NDIndex(
                         "{}, {}, ...",
@@ -167,10 +168,9 @@ public class LMSearch {
                         newHiddenState.reshape(numBatch, k, 1, hiddenDim).get(selectIndex), 1);
 
         // To be concatenated into searchState.outputIds
-        // [batch, topK]
-        NDArray outputIds = topKIds.get(selectIndex);
         // [batch, seq_past]
-        NDArray nextOutputIds = searchState.pastOutputIds.concat(outputIds.reshape(numBatch, 1), 1);
+        NDArray outputIds = generatedOutput.get(0);
+        NDArray nextOutputIds = searchState.pastOutputIds.concat(outputIds, 1);
 
         // [batch, seq_past]
         NDArray nextPastAttentionMask =
@@ -240,7 +240,7 @@ class SearchState {
 final class StepGeneration {
     private StepGeneration() {}
 
-    public static NDArray ConstrastStepGeneration(
+    public static NDList ConstrastStepGeneration(
             NDArray topKIds,
             NDArray logits,
             NDArray contextHiddenStates,
@@ -288,10 +288,14 @@ final class StepGeneration {
         NDArray topkScore = topkScorePart2.mul(1 - alpha).sub(topkScorePart1.mul(alpha));
 
         // [batch, topK] => [batch, 1]
-        NDArray selectIndex = topkScore.argMax(1).expandDims(1);
-        assert selectIndex.getShape().getShape().length == 2 : "Wrong output size";
-
-        return selectIndex;
+        NDArray select = topkScore.argMax(1);
+        NDIndex selectIndex =
+                new NDIndex(
+                        "{}, {}, ...",
+                        logits.getManager().arange(0, topKIds.getShape().get(0), 1, DataType.INT64),
+                        select);
+        NDArray outputIds = topKIds.get(selectIndex).reshape(-1, 1);
+        return new NDList(outputIds, select);
     }
 
     // TODO: add support of Einstein summation:
