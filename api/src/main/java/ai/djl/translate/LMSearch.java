@@ -577,7 +577,7 @@ final class StepGeneration {
         // [batch, beamSource, probDim] -> [batch, beamSource, beamChild]
         NDList topK = allProbs.topK((int) numBeam, -1, true, false);
         NDArray outputIs = topK.get(1);
-        NDArray stepProbs = topK.get(0).normalize(1, -1);
+        NDArray stepProbs = topK.get(0);
 
         // Chain the probability
         // [batch, beamSource] -> [batch, beamSource, 1]

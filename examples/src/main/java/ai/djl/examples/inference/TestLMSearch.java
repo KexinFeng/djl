@@ -32,7 +32,7 @@ public final class TestLMSearch {
     private TestLMSearch() {}
 
     public static void main(String[] args) {
-        //        mainPt(args);
+//        mainPt(args);
         mainGreedy(args);
         mainBeam(args);
     }
