@@ -73,107 +73,79 @@ public class LMSearch {
     public NDArray beamSearch(NDArray inputIds, SearchConfig config) {
         NDArray attentionMask = prepareAttentionMask(inputIds, config);
         NDManager manager = inputIds.getManager();
-        // Initial beams
         long numBeam = config.beam;
         long numBatch = inputIds.getShape().get(0);
-        NDList modelInput = prepareInput(inputIds, attentionMask, 0);
-        CausalLMOutput modelOutput = lmAdapter.forward(modelInput, null, manager);
+        BeamSearchState searchState = new BeamSearchState();
 
-        // [batch, probDim]
-        NDArray allProbs = modelOutput.logits.get(":, -1, :").softmax(1);
-
-        // [batch, beam]
-        NDList topK = allProbs.topK((int) numBeam, -1, true, false);
-        NDArray outputIds = topK.get(1).expandDims(2);
-        NDArray lastProbs = topK.get(0).normalize(1, 1);
-        assert outputIds.getShape().getShape().length == 3 : "Wrong shape";
-        assert lastProbs.getShape().getShape().length == 2 : "Wrong Shape";
-
-        // [batch, beam, seq + 1]
-        attentionMask =
-                attentionMask
-                        .concat(manager.ones(new Shape(numBatch, 1), DataType.INT64), -1)
-                        .expandDims(1)
-                        .repeat(1, numBeam);
-
-        // [batch, beam, heads, seq_past, kvFeature]
-        Function<NDArray, NDArray> fn = ndarray -> ndarray.expandDims(1).repeat(1, numBeam);
-        NDList pastKeyValues =
-                new NDList(
-                        modelOutput.pastKeyValuesList.stream()
-                                .map(fn)
-                                .collect(Collectors.toList()));
-        // [batch, beam, seq_past]
-        NDArray pastOutputIds = inputIds.expandDims(1).repeat(1, numBeam);
-
-        BeamSearchState searchState =
-                new BeamSearchState(
-                        outputIds, pastOutputIds, pastKeyValues, attentionMask, lastProbs);
-
-        long numHeads = pastKeyValues.get(0).getShape().get(-3);
-        long kvDim = pastKeyValues.get(0).getShape().get(-1);
+        long numHeads = 0;
+        long kvDim = 0;
         while (true) {
+            if (searchState.pastAttentionMask == null) {
+                // Initial beams
+                NDList modelInput = prepareInput(inputIds, attentionMask, 0);
+                CausalLMOutput modelOutput = lmAdapter.forward(modelInput, null, manager);
+
+                // [batch, probDim]
+                NDArray allProbs = modelOutput.logits.get(":, -1, :").softmax(1);
+
+                // [batch, beam]
+                NDList topK = allProbs.topK((int) numBeam, -1, true, false);
+                NDArray outputIds = topK.get(1).expandDims(2);
+                NDArray lastProbs = topK.get(0).normalize(1, 1);
+                assert outputIds.getShape().getShape().length == 3 : "Wrong shape";
+                assert lastProbs.getShape().getShape().length == 2 : "Wrong Shape";
+
+                // [batch, beam, seq + 1]
+                attentionMask =
+                        attentionMask
+                                .concat(manager.ones(new Shape(numBatch, 1), DataType.INT64), -1)
+                                .expandDims(1)
+                                .repeat(1, numBeam);
+
+                // [batch, beam, heads, seq_past, kvFeature]
+                Function<NDArray, NDArray> fn = ndarray -> ndarray.expandDims(1).repeat(1, numBeam);
+                NDList pastKeyValues =
+                        new NDList(
+                                modelOutput.pastKeyValuesList.stream()
+                                        .map(fn)
+                                        .collect(Collectors.toList()));
+                // [batch, beam, seq_past]
+                NDArray pastOutputIds = inputIds.expandDims(1).repeat(1, numBeam);
+
+                searchState =
+                        new BeamSearchState(
+                                outputIds, pastOutputIds, pastKeyValues, attentionMask, lastProbs);
+
+                numHeads = pastKeyValues.get(0).getShape().get(-3);
+                kvDim = pastKeyValues.get(0).getShape().get(-1);
+            }
+
             long pastSeqLength = searchState.pastOutputIds.getShape().size(-1);
-            modelInput =
+            NDList modelInput =
                     prepareInput(
                             searchState.nextInputIds.reshape(numBatch * numBeam, 1),
                             searchState.pastAttentionMask.reshape(numBatch * numBeam, -1),
                             pastSeqLength);
-            fn = ndarray -> ndarray.reshape(numBatch * numBeam, numHeads, pastSeqLength, kvDim);
-            pastKeyValues =
+
+            final long finalNumHeads = numHeads;
+            final long finalKvDim = kvDim;
+            Function<NDArray, NDArray> fn =
+                    ndarray ->
+                            ndarray.reshape(
+                                    numBatch * numBeam, finalNumHeads, pastSeqLength, finalKvDim);
+            NDList pastKeyValues =
                     new NDList(
                             searchState.pastKeyValues.stream()
                                     .map(fn)
                                     .collect(Collectors.toList()));
-            modelOutput = lmAdapter.forward(modelInput, pastKeyValues, manager);
+            CausalLMOutput modelOutput = lmAdapter.forward(modelInput, pastKeyValues, manager);
 
             NDList generatedOutput =
                     StepGeneration.BeamStepGeneration(
                             searchState, modelOutput.logits, numBatch, numBeam);
 
             // Update searchState
-            NDArray nextInputIds = generatedOutput.get(0);
-            assert nextInputIds.getShape().getShape().length == 3 : "Wrong Shape";
-            NDArray newProbs = generatedOutput.get(1);
-            // [batch, beamNew]
-            NDArray sourceBeamSelected = generatedOutput.get(2);
-            // Act on [batch, beam, ...] dimension and the output will be [batch, beam, ...]
-            NDIndex sourceBeamIndex =
-                    new NDIndex(
-                            "{}, {}, ...",
-                            manager.arange(0, numBatch, 1, DataType.INT64)
-                                    .expandDims(1)
-                                    .repeat(1, numBeam),
-                            sourceBeamSelected);
-
-            // A simple concatenation is not enough. During the beam selection process, some source
-            // beams are selected several times while some source beams are not selected even once.
-            // The pastOutput should be reselected to have the right correspondence to the
-            // newInputIds.
-            searchState.pastOutputIds =
-                    searchState
-                            .pastOutputIds
-                            .concat(searchState.nextInputIds, -1)
-                            .get(sourceBeamIndex);
-            fn =
-                    ndarray ->
-                            ndarray.reshape(numBatch, numBeam, numHeads, pastSeqLength + 1, kvDim)
-                                    .get(sourceBeamIndex);
-            searchState.pastKeyValues =
-                    new NDList(
-                            modelOutput.pastKeyValuesList.stream()
-                                    .map(fn)
-                                    .collect(Collectors.toList()));
-
-            searchState.nextInputIds = nextInputIds;
-            searchState.lastProbs = newProbs;
-            searchState.pastAttentionMask =
-                    searchState
-                            .pastAttentionMask
-                            .concat(
-                                    manager.ones(new Shape(numBatch, numBeam, 1), DataType.INT64),
-                                    -1)
-                            .get(sourceBeamIndex);
+            searchState = updateSearchState(searchState, modelOutput, generatedOutput, manager);
 
             // Termination Criteria
             // TODO: <EOS>, delete the sentence and add it to result.
@@ -277,6 +249,59 @@ public class LMSearch {
         }
 
         return searchState.pastOutputIds;
+    }
+
+    private BeamSearchState updateSearchState(
+            BeamSearchState searchState,
+            CausalLMOutput modelOutput,
+            NDList generatedOutput,
+            NDManager manager) {
+
+        NDList pastKeyValues = searchState.pastKeyValues;
+        long numHeads = pastKeyValues.get(0).getShape().get(-3);
+        long kvDim = pastKeyValues.get(0).getShape().get(-1);
+        long numBatch = searchState.pastOutputIds.getShape().get(0);
+        long numBeam = searchState.pastOutputIds.getShape().get(1);
+        long pastSeqLength = searchState.pastOutputIds.getShape().size(-1);
+
+        NDArray nextInputIds = generatedOutput.get(0);
+        assert nextInputIds.getShape().getShape().length == 3 : "Wrong Shape";
+        NDArray newProbs = generatedOutput.get(1);
+        // [batch, beamNew]
+        NDArray sourceBeamSelected = generatedOutput.get(2);
+        // Act on [batch, beam, ...] dimension and the output will be [batch, beam, ...]
+        NDIndex sourceBeamIndex =
+                new NDIndex(
+                        "{}, {}, ...",
+                        manager.arange(0, numBatch, 1, DataType.INT64)
+                                .expandDims(1)
+                                .repeat(1, numBeam),
+                        sourceBeamSelected);
+
+        // A simple concatenation is not enough. During the beam selection process, some source
+        // beams are selected several times while some source beams are not selected even once.
+        // The pastOutput should be reselected to have the right correspondence to the
+        // newInputIds.
+        NDArray pastOutputIds =
+                searchState.pastOutputIds.concat(searchState.nextInputIds, -1).get(sourceBeamIndex);
+        Function<NDArray, NDArray> fn =
+                ndarray ->
+                        ndarray.reshape(numBatch, numBeam, numHeads, pastSeqLength + 1, kvDim)
+                                .get(sourceBeamIndex);
+        pastKeyValues =
+                new NDList(
+                        modelOutput.pastKeyValuesList.stream()
+                                .map(fn)
+                                .collect(Collectors.toList()));
+
+        NDArray pastAttentionMask =
+                searchState
+                        .pastAttentionMask
+                        .concat(manager.ones(new Shape(numBatch, numBeam, 1), DataType.INT64), -1)
+                        .get(sourceBeamIndex);
+
+        return new BeamSearchState(
+                nextInputIds, pastOutputIds, pastKeyValues, pastAttentionMask, newProbs);
     }
 
     private ContrastiveSearchState updateSearchState(
@@ -443,6 +468,8 @@ class BeamSearchState {
     // kv: [batch, beam, heads, seq_past, kvfeature]
     // The cache of past sequence. seq-dim-size == |past_seq| + |inputIds|. Will grow.
     public NDList pastKeyValues;
+
+    BeamSearchState() {}
 
     BeamSearchState(
             NDArray nextInputIds,

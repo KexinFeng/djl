@@ -32,12 +32,13 @@ public final class TestLMSearch {
     private TestLMSearch() {}
 
     public static void main(String[] args) {
-//        mainPt(args);
-        mainGreedy(args);
-        mainBeam(args);
+        //        mainContrastivePt(args);
+        //        mainGreedy(args);
+        //        mainBeam(args);
+        mainBeamOnnx(args);
     }
 
-    public static void mainPt(String[] args) {
+    public static void mainConstrastivPt(String[] args) {
         //        String[] modelUrls = {
         //
         // "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/transformer/traced_GPT2_init_hidden.pt",
@@ -159,6 +160,39 @@ public final class TestLMSearch {
         GPTConfig gptConfig = new GPTConfig(modelUrls);
 
         try (LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
+                NDManager manager = NDManager.newBaseManager()) {
+
+            LMSearch lmSearch;
+            lmSearch = new LMSearch(lmAdapter);
+            SearchConfig config = new SearchConfig();
+            config.maxSeqLength = 50;
+            config.beam = 3;
+
+            // [r'DeepMind Company is',
+            // r'Memories follow me left and right. I can']
+            NDArray inputIds =
+                    manager.create(
+                            new long[][] {
+                                {29744, 28478, 5834, 318, 220, 220, 220, 220, 220, 220},
+                                {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
+                            });
+            config.padTokenId = 220;
+
+            NDArray output = lmSearch.beamSearch(inputIds, config);
+            System.out.println(output.toDebugString(1000, 10, 10, 100, true));
+
+        } catch (ModelNotFoundException | MalformedModelException | IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static void mainBeamOnnx(String[] args) {
+        String[] modelUrls = {
+            "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/gpt2_onnx/decoder_model_merged.onnx"
+        };
+        GPTConfig gptConfig = new GPTConfig(modelUrls);
+
+        try (LMAdapter lmAdapter = Engine.getEngine("OnnxRuntime").newLMAdapter("GPT2", gptConfig);
                 NDManager manager = NDManager.newBaseManager()) {
 
             LMSearch lmSearch;
