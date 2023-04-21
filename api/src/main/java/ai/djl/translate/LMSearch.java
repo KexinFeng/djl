@@ -38,7 +38,7 @@ public class LMSearch {
             long pastSeqLength =
                     searchState.pastOutputIds == null
                             ? 0
-                            : searchState.pastOutputIds.getShape().size(-1);
+                            : searchState.pastOutputIds.getShape().get(-1);
             NDList modelInput =
                     prepareInput(
                             searchState.nextInputIds, searchState.pastAttentionMask, pastSeqLength);
@@ -120,7 +120,7 @@ public class LMSearch {
                 kvDim = pastKeyValues.get(0).getShape().get(-1);
             }
 
-            long pastSeqLength = searchState.pastOutputIds.getShape().size(-1);
+            long pastSeqLength = searchState.pastOutputIds.getShape().get(-1);
             NDList modelInput =
                     prepareInput(
                             searchState.nextInputIds.reshape(numBatch * numBeam, 1),
@@ -217,8 +217,8 @@ public class LMSearch {
             kCopyPastAttentionMask =
                     kCopyPastAttentionMask.concat(
                             manager.ones(new Shape(numBatch * config.k, 1), DataType.INT64), 1);
-            assert kCopyPastKeyValues.get(0).getShape().size(-2) + 1
-                            == kCopyPastAttentionMask.getShape().size(-1)
+            assert kCopyPastKeyValues.get(0).getShape().get(-2) + 1
+                            == kCopyPastAttentionMask.getShape().get(-1)
                     : "attentionMask_seq = past_seq + new_input_seq";
 
             // Forward with candidates in batch input
@@ -226,7 +226,7 @@ public class LMSearch {
                     prepareInput(
                             candidateInputIds,
                             kCopyPastAttentionMask,
-                            searchState.pastOutputIds.getShape().size(-1));
+                            searchState.pastOutputIds.getShape().get(-1));
             CausalLMOutput candidateOutput =
                     lmAdapter.forward(candidateModelInput, kCopyPastKeyValues, manager);
 
@@ -262,7 +262,7 @@ public class LMSearch {
         long kvDim = pastKeyValues.get(0).getShape().get(-1);
         long numBatch = searchState.pastOutputIds.getShape().get(0);
         long numBeam = searchState.pastOutputIds.getShape().get(1);
-        long pastSeqLength = searchState.pastOutputIds.getShape().size(-1);
+        long pastSeqLength = searchState.pastOutputIds.getShape().get(-1);
 
         NDArray nextInputIds = generatedOutput.get(0);
         assert nextInputIds.getShape().getShape().length == 3 : "Wrong Shape";
@@ -434,6 +434,7 @@ class GreedySearchState {
     // kv: [batch, heads, seq_past, kvfeature]
     // The cache of past sequence. seq-dim-size == |past_seq| + |inputIds|. Will grow.
     public NDList pastKeyValues;
+
     public long pastSeqLength;
 
     GreedySearchState(
@@ -504,6 +505,7 @@ class ContrastiveSearchState {
 
     // [batch, seq_past]. seq-dim-size == |past_seq| + |inputIds|. Will grow.
     public NDArray pastOutputIds;
+
     public long pastSeqLength;
 
     ContrastiveSearchState() {}
