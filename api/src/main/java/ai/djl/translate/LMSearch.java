@@ -26,12 +26,14 @@ public class LMSearch {
 
     private LMAdapter lmAdapter;
 
+    public NDArray positionOffset;
+
     public LMSearch(LMAdapter lmAdapter) {
         this.lmAdapter = lmAdapter;
     }
 
     public NDArray greedySearch(NDArray inputIds, SearchConfig config) {
-        NDArray attentionMask = prepareAttentionMask(inputIds, config);
+        NDArray attentionMask = prepareAttentionMaskOffset(inputIds, config);
         NDManager manager = inputIds.getManager();
         GreedySearchState searchState = new GreedySearchState(inputIds, null, null, attentionMask);
         while (true) {
@@ -41,7 +43,7 @@ public class LMSearch {
                             : searchState.pastOutputIds.getShape().get(-1);
             NDList modelInput =
                     prepareInput(
-                            searchState.nextInputIds, searchState.pastAttentionMask, pastSeqLength);
+                            searchState.nextInputIds, searchState.pastAttentionMask, pastSeqLength, 1);
             CausalLMOutput modelOutput =
                     lmAdapter.forward(modelInput, searchState.pastKeyValues, manager);
 
@@ -71,7 +73,7 @@ public class LMSearch {
     }
 
     public NDArray beamSearch(NDArray inputIds, SearchConfig config) {
-        NDArray attentionMask = prepareAttentionMask(inputIds, config);
+        NDArray attentionMask = prepareAttentionMaskOffset(inputIds, config);
         NDManager manager = inputIds.getManager();
         long numBeam = config.beam;
         long numBatch = inputIds.getShape().get(0);
@@ -82,7 +84,7 @@ public class LMSearch {
         while (true) {
             if (searchState.pastAttentionMask == null) {
                 // Initial beams
-                NDList modelInput = prepareInput(inputIds, attentionMask, 0);
+                NDList modelInput = prepareInput(inputIds, attentionMask, 0, 1);
                 CausalLMOutput modelOutput = lmAdapter.forward(modelInput, null, manager);
 
                 // [batch, probDim]
@@ -125,7 +127,7 @@ public class LMSearch {
                     prepareInput(
                             searchState.nextInputIds.reshape(numBatch * numBeam, 1),
                             searchState.pastAttentionMask.reshape(numBatch * numBeam, -1),
-                            pastSeqLength);
+                            pastSeqLength, config.beam);
 
             final long finalNumHeads = numHeads;
             final long finalKvDim = kvDim;
@@ -163,7 +165,6 @@ public class LMSearch {
     public NDArray contrastiveSearch(
             NDManager manager,
             NDArray inputIds,
-            NDArray attentionMask,
             long[][] attentionMaskSlices, // [batch, startIndex, inputIds.getShape.get(1)-1]
             SearchConfig config) {
         // inputIds: [batchSize, seqLength: t_init]
@@ -173,10 +174,11 @@ public class LMSearch {
         //        NDArray unfinishedBatchIndex =
         // manager.arange(inputIds.getShape().get(0)).reshape(-1, 1);
 
+        NDArray attentionMask = prepareAttentionMaskOffset(inputIds, config);
         ContrastiveSearchState searchState = new ContrastiveSearchState();
         while (true) {
             if (searchState.pastKeyValues == null) {
-                NDList modelInput = prepareInput(inputIds, attentionMask, 0);
+                NDList modelInput = prepareInput(inputIds, attentionMask, 0, 1);
                 CausalLMOutput output = lmAdapter.forward(modelInput, null, manager);
                 NDArray lastLogits = output.logits.get(":, -1, :");
                 searchState =
@@ -226,7 +228,8 @@ public class LMSearch {
                     prepareInput(
                             candidateInputIds,
                             kCopyPastAttentionMask,
-                            searchState.pastOutputIds.getShape().get(-1));
+                            searchState.pastOutputIds.getShape().get(-1),
+                            config.k);
             CausalLMOutput candidateOutput =
                     lmAdapter.forward(candidateModelInput, kCopyPastKeyValues, manager);
 
@@ -371,8 +374,9 @@ public class LMSearch {
                 nextPastAttentionMask); // can be spared.
     }
 
-    private NDArray prepareAttentionMask(NDArray inputIds, SearchConfig config) {
-        // prepare attentionMask
+    private NDArray prepareAttentionMaskOffset(NDArray inputIds, SearchConfig config) {
+        // prepare attentionMask and positionOffset
+        // Used to initialize the search
         boolean suffixPadding = config.suffixPadding;
         NDManager manager = inputIds.getManager();
         int numBatch = (int) inputIds.getShape().get(0);
@@ -381,6 +385,9 @@ public class LMSearch {
                 manager.ones(new Shape(1, inputIds.getShape().get(-1)), DataType.INT64)
                         .reshape(1, -1)
                         .repeat(0, numBatch);
+
+        // Linear search from left to find the first position that's not padTokenId.
+        long [][] offset = new long[numBatch][1];
         for (int i = 0; i < numBatch; i++) {
             long[] aSequence = inputIds.get("{},:", i).toLongArray();
             int idx = 0;
@@ -398,11 +405,16 @@ public class LMSearch {
                             suffixPadding ? idx : 0,
                             suffixPadding ? initSeqSize : idx),
                     0);
+            if (!suffixPadding) {
+                offset[i][0] = -idx;
+            }
         }
+        positionOffset = manager.create(offset);
         return attentionMask;
     }
 
-    private NDList prepareInput(NDArray inputIds, NDArray attentionMask, long pastSeqLength) {
+    private NDList prepareInput(NDArray inputIds, NDArray attentionMask, long pastSeqLength, int repeat) {
+        // Pack the model input
         NDArray positionIds =
                 inputIds.getManager()
                         .arange(
@@ -412,6 +424,9 @@ public class LMSearch {
                                 DataType.INT64)
                         .expandDims(0)
                         .repeat(0, inputIds.getShape().get(0));
+
+        NDArray positionIdsShifted = positionIds.addi(positionOffset.repeat(0, repeat));
+        positionIds = positionIdsShifted.maximum(positionIdsShifted.zerosLike());
 
         return new NDList(inputIds, positionIds, attentionMask);
     }
