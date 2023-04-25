@@ -34,10 +34,10 @@ public final class TestLMSearch {
     private TestLMSearch() {}
 
     public static void main(String[] args) {
-                mainContrastivePt(args);
-                mainGreedy(args);
-                mainBeam(args);
-                mainBeamOnnx(args);
+        mainContrastivePt(args);
+        mainGreedy(args);
+        mainBeam(args);
+        mainBeamOnnx(args);
     }
 
     public static void mainContrastivePt(String[] args) {
@@ -60,8 +60,8 @@ public final class TestLMSearch {
         };
         GPTConfig gptConfig = new GPTConfig(modelUrls);
 
-        try (LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
-                NDManager manager = NDManager.newBaseManager()) {
+        try (NDManager manager = NDManager.newBaseManager()) {
+            LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
 
             LMSearch lmSearch;
             lmSearch = new LMSearch(lmAdapter);
@@ -112,8 +112,7 @@ public final class TestLMSearch {
             }
 
             NDArray output =
-                    lmSearch.contrastiveSearch(
-                            manager, inputIds, attentionMaskSlice, config);
+                    lmSearch.contrastiveSearch(manager, inputIds, attentionMaskSlice, config);
             System.out.println(output.toDebugString(1000, 10, 10, 100, true));
 
             printDecode(output);
@@ -129,8 +128,8 @@ public final class TestLMSearch {
         };
         GPTConfig gptConfig = new GPTConfig(modelUrls);
 
-        try (LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
-                NDManager manager = NDManager.newBaseManager()) {
+        try (NDManager manager = NDManager.newBaseManager()) {
+            LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
 
             LMSearch lmSearch;
             lmSearch = new LMSearch(lmAdapter);
@@ -165,8 +164,8 @@ public final class TestLMSearch {
         };
         GPTConfig gptConfig = new GPTConfig(modelUrls);
 
-        try (LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
-                NDManager manager = NDManager.newBaseManager()) {
+        try (NDManager manager = NDManager.newBaseManager()) {
+            LMAdapter lmAdapter = Engine.getEngine("PyTorch").newLMAdapter("GPT2", gptConfig);
 
             LMSearch lmSearch;
             lmSearch = new LMSearch(lmAdapter);
@@ -201,8 +200,8 @@ public final class TestLMSearch {
         };
         GPTConfig gptConfig = new GPTConfig(modelUrls);
 
-        try (LMAdapter lmAdapter = Engine.getEngine("OnnxRuntime").newLMAdapter("GPT2", gptConfig);
-                NDManager manager = NDManager.newBaseManager()) {
+        try (NDManager manager = NDManager.newBaseManager()) {
+            LMAdapter lmAdapter = Engine.getEngine("OnnxRuntime").newLMAdapter("GPT2", gptConfig);
 
             LMSearch lmSearch;
             lmSearch = new LMSearch(lmAdapter);
@@ -217,7 +216,7 @@ public final class TestLMSearch {
                             new long[][] {
                                 {220, 220, 220, 220, 220, 220, 29744, 28478, 5834, 318},
                                 {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
-//                                {220, 29744, 28478, 5834, 318}
+                                //                                {220, 29744, 28478, 5834, 318}
                             });
             config.padTokenId = 220;
             config.suffixPadding = false;
@@ -234,7 +233,8 @@ public final class TestLMSearch {
 
     private static void printDecode(NDArray output) throws IOException {
         // Decoding
-        String tokenizerJson = "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/gpt2_onnx/tokenizer.json";
+        String tokenizerJson =
+                "/Users/fenkexin/Desktop/tasks/HuggingFaceQa_relavant/gpt2_onnx/tokenizer.json";
         HuggingFaceTokenizer tokenizer = HuggingFaceTokenizer.newInstance(Paths.get(tokenizerJson));
 
         System.out.println('\n');

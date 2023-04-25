@@ -43,7 +43,10 @@ public class LMSearch {
                             : searchState.pastOutputIds.getShape().get(-1);
             NDList modelInput =
                     prepareInput(
-                            searchState.nextInputIds, searchState.pastAttentionMask, pastSeqLength, 1);
+                            searchState.nextInputIds,
+                            searchState.pastAttentionMask,
+                            pastSeqLength,
+                            1);
             CausalLMOutput modelOutput =
                     lmAdapter.forward(modelInput, searchState.pastKeyValues, manager);
 
@@ -127,7 +130,8 @@ public class LMSearch {
                     prepareInput(
                             searchState.nextInputIds.reshape(numBatch * numBeam, 1),
                             searchState.pastAttentionMask.reshape(numBatch * numBeam, -1),
-                            pastSeqLength, config.beam);
+                            pastSeqLength,
+                            config.beam);
 
             final long finalNumHeads = numHeads;
             final long finalKvDim = kvDim;
@@ -387,7 +391,7 @@ public class LMSearch {
                         .repeat(0, numBatch);
 
         // Linear search from left to find the first position that's not padTokenId.
-        long [][] offset = new long[numBatch][1];
+        long[][] offset = new long[numBatch][1];
         for (int i = 0; i < numBatch; i++) {
             long[] aSequence = inputIds.get("{},:", i).toLongArray();
             int idx = 0;
@@ -413,7 +417,8 @@ public class LMSearch {
         return attentionMask;
     }
 
-    private NDList prepareInput(NDArray inputIds, NDArray attentionMask, long pastSeqLength, int repeat) {
+    private NDList prepareInput(
+            NDArray inputIds, NDArray attentionMask, long pastSeqLength, int repeat) {
         // Pack the model input
         NDArray positionIds =
                 inputIds.getManager()
