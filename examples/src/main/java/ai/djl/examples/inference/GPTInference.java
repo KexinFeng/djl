@@ -32,7 +32,11 @@ import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
 import ai.djl.training.util.ProgressBar;
+import ai.djl.translate.NoBatchifyTranslator;
 import ai.djl.translate.TranslateException;
+import ai.djl.translate.TranslatorContext;
+
+import ai.djl.util.Pair;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,56 +54,75 @@ public final class GPTInference {
     public static void main(String[] args)
             throws ModelNotFoundException, MalformedModelException, IOException,
                     TranslateException {
-        //        testOnnx();
-        testPtGreedy();
+        testOnnx();
+        testPt();
     }
 
-    private static void testPtGreedy()
-            throws ModelNotFoundException, MalformedModelException, IOException {
+    private static void testPt()
+            throws ModelNotFoundException, MalformedModelException, IOException,
+                    TranslateException {
         String[] modelUrls = {
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"
+                "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
+                "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"
         };
-        Block[] blocks = new Block[modelUrls.length];
-        List<Model> models = new LinkedList<>();
-        for (int i = 0; i < modelUrls.length; i++) {
-            Criteria<NDList, NDList> criteria =
-                    Criteria.builder()
-                            .setTypes(NDList.class, NDList.class)
-                            .optModelUrls(modelUrls[i])
-                            .optEngine("PyTorch")
-                            .optProgress(new ProgressBar())
-                            .build();
-            Model model = criteria.loadModel();
-            blocks[i] = model.getBlock();
-            models.add(model);
-        }
-        LMBlock lmBlock = Engine.getEngine("PyTorch").newLMBlock("GPT2", new GPTConfig(), blocks);
+        Pair<Block, List<Model>> result = LLMBlock.getLMBlock(modelUrls, "PyTorch", "GPT2");
+        LMBlock lmBlock = (LMBlock) result.getKey();
+        // An adapter class lmBlock along with the lmBlock.forward call is inevitable, because, as shown
+        // in comments in L168-170, the searching code should be general rather than specific to a certain model.
 
         SearchConfig config = new SearchConfig();
         config.setMaxSeqLength(60);
-        LMSearch lmSearch = new LMSearch(lmBlock, "greedy", config);
 
-        String[] input = {"DeepMind Company is"};
-        try (NDManager manager = NDManager.newBaseManager("PyTorch");
-                HuggingFaceTokenizer tokenizer = HuggingFaceTokenizer.newInstance("gpt2")) {
+        String[] input = new String[] {"DeepMind Company is"};
+        try (Model model = Model.newInstance("GPT2PtGreedy")) {
+            // Change "greedy" to "contrastive", it will call greedy search
+            model.setBlock(new LMSearch(lmBlock, "greedy", config));
+
+            try (Predictor<String[], String> predictor =
+                    model.newPredictor(new GPTTranslator()); ) {
+                // According to the last code review meeting, the translator's pre/post process only
+                // takes care of the tokenizer's encoding and decoding part. It's also why Zach proposed
+                // to make LMSearch inherit AbstractBlock, so that it will be wrapped in a Model and
+                // utilizes the translator
+                String output = predictor.predict(input);
+
+                String expected =
+                        "DeepMind Company is a global leader in the field of artificial"
+                            + " intelligence and artificial intelligence. We are a leading provider"
+                            + " of advanced AI solutions for the automotive industry, including the"
+                            + " latest in advanced AI solutions for the automotive industry. We are"
+                            + " also a leading provider of advanced AI solutions for the automotive"
+                            + " industry, including the";
+
+                logger.info("{}", expected.equals(output));
+            }
+        }
+        result.getValue().forEach(Model::close);
+    }
+
+    private static class GPTTranslator implements NoBatchifyTranslator<String[], String> {
+
+        HuggingFaceTokenizer tokenizer;
+
+        public GPTTranslator() {
+            tokenizer = HuggingFaceTokenizer.newInstance("gpt2");
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public String processOutput(TranslatorContext ctx, NDList list) {
+            long[] output = list.singletonOrThrow().toLongArray();
+            return tokenizer.decode(output);
+        }
+
+        /** {@inheritDoc} */
+        @Override
+        public NDList processInput(TranslatorContext ctx, String[] input) {
             Encoding encoding = tokenizer.encode(input);
             long[] inputIdsLong = encoding.getIds();
-            NDArray inputIds = manager.create(inputIdsLong).expandDims(0);
-
-            NDArray output = lmSearch.forward(inputIds).get(":, -10:");
-
-            String outputString = tokenizer.decode(output.toLongArray());
-            String expected = "are also a leading provider of advanced AI solutions for";
-
-            logger.info("{}", expected.equals(outputString));
+            NDArray inputIds = ctx.getNDManager().create(inputIdsLong);
+            return new NDList(inputIds.expandDims(0));
         }
-        // According to the last code review meeting, the conclusion was to only put tokenizer's
-        // encoding
-        // and decoding part into the translator's pre/post process. That is also why Zach proposed
-        // to make LMSearch integrate AbstractBlock so that it will be called by predictor.
-
-        models.forEach(Model::close);
     }
 
     private static void testOnnx()

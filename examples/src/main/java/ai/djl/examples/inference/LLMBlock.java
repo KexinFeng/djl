@@ -65,6 +65,8 @@ public final class LLMBlock {
         }
 
         return new Pair<>(
+                // Creating a LMBlock calls GPT2PtLMBlock.java which is engine specific, whose package
+                // `pytorch-engines.main` cannot be loaded here.
                 Engine.getEngine(engine).newLMBlock(modelName, new GPTConfig(), blocks), models);
     }
 
