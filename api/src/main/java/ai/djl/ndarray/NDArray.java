@@ -4614,12 +4614,6 @@ public interface NDArray extends NDResource, BytesSupplier {
      */
     NDArray argMax(int axis);
 
-    default NDList topK(int k, int axis) {
-        return topK(k, axis, true, true);
-    }
-
-    NDList topK(int k, int axis, boolean largest, boolean sorted);
-
     /**
      * Returns (values, indices) of the top k values along given axis.
      *

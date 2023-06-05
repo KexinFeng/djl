@@ -44,7 +44,8 @@ public final class LLMBlock {
         return 0;
     }
 
-    public static Pair<Block, List<Model>> getLMBlock(String[] modelUrls, String engine, String modelName)
+    public static Pair<Block, List<Model>> getLMBlock(
+            String[] modelUrls, String engine, String modelName)
             throws ModelNotFoundException, MalformedModelException, IOException {
         Block[] blocks;
         List<Model> models = new LinkedList<>();
@@ -63,7 +64,8 @@ public final class LLMBlock {
             models.add(model);
         }
 
-        return new Pair<>(Engine.getEngine(engine).newLMBlock(modelName, new GPTConfig(), blocks), models);
+        return new Pair<>(
+                Engine.getEngine(engine).newLMBlock(modelName, new GPTConfig(), blocks), models);
     }
 
     public static void mainOnnx()
