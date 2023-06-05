@@ -21,8 +21,8 @@ import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDManager;
 import ai.djl.nn.Block;
 import ai.djl.repository.zoo.ModelNotFoundException;
-
 import ai.djl.util.Pair;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
