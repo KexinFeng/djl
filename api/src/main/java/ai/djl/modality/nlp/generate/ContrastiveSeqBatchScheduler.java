@@ -65,7 +65,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
             scope.suppressNotUsedWarning();
 
             /* Prepare input for one inference call */
-            NDArray logits = ((ContrastiveBatchTensorList) seqBatcher.getData()).logits;
+            NDArray logits = ((ContrastiveBatchTensorList) seqBatcher.getData()).getLogits();
             NDArray topKIds = logits.topK(config.k, -1, true, false).get(1); // [batch, topK]
             ContrastiveBatchTensorList searchState = (ContrastiveBatchTensorList) seqBatcher.data;
 
@@ -79,7 +79,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
             // [batch, heads, seq_past, feature] -> [batch * topK, head, seq_past, feature]
             NDList kCopyPastKeyValues =
                     new NDList(
-                            searchState.pastKeyValues.stream()
+                            searchState.getPastKeyValues().stream()
                                     .map(ndarray -> ndarray.repeat(0, config.k))
                                     .collect(Collectors.toList()));
             assert kCopyPastKeyValues.get(0).getDataType() == DataType.FLOAT32
@@ -87,7 +87,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
 
             // [batch, seq_past] -> [batch * topK, seq_past] -> [batch * topK, seq_past + 1]
             long numBatch = topKIds.getShape().get(0);
-            NDArray kCopyPastAttentionMask = searchState.pastAttentionMask.repeat(0, config.k);
+            NDArray kCopyPastAttentionMask = searchState.getPastAttentionMask().repeat(0, config.k);
             kCopyPastAttentionMask =
                     kCopyPastAttentionMask.concat(
                             manager.ones(new Shape(numBatch * config.k, 1), DataType.INT64), 1);
@@ -100,7 +100,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                     computePositionIds(
                             candidateInputIds,
                             seqBatcher.offSets,
-                            searchState.pastOutputIds.getShape().get(-1),
+                            searchState.getPastOutputIds().getShape().get(-1),
                             config.k);
             CausalLMOutput candidateOutput =
                     lmBlock.forward(
@@ -115,17 +115,17 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                     StepGeneration.constrastiveStepGeneration(
                             topKIds,
                             logits,
-                            searchState.pastHiddenStates,
+                            searchState.getPastHiddenStates(),
                             candidateOutput.allHiddenStates.get(0),
                             seqBatcher.offSets,
                             config.alpha);
 
             /* Update searchState for next loop */
             long logitsDim = logits.getShape().get(1);
-            long numHeads = searchState.pastKeyValues.get(0).getShape().get(1);
-            long kvDim = searchState.pastKeyValues.get(0).getShape().get(3);
-            long currentSeqLength = searchState.pastOutputIds.getShape().get(1);
-            long hiddenDim = searchState.pastHiddenStates.getShape().get(2);
+            long numHeads = searchState.getPastKeyValues().get(0).getShape().get(1);
+            long kvDim = searchState.getPastKeyValues().get(0).getShape().get(3);
+            long currentSeqLength = searchState.getPastOutputIds().getShape().get(1);
+            long hiddenDim = searchState.getPastHiddenStates().getShape().get(2);
 
             // [batch, 1]
             NDArray select = generatedOutput.get(1);
@@ -162,21 +162,24 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
             NDArray newHiddenState = candidateOutput.allHiddenStates.get(0);
             assert newHiddenState.getManager() == manager : "possible leaky memory";
             NDArray nextPastHiddenStates =
-                    searchState.pastHiddenStates.concat(
-                            newHiddenState
-                                    .reshape(numBatch, config.k, 1, hiddenDim)
-                                    .get(selectIndex),
-                            1);
+                    searchState
+                            .getPastHiddenStates()
+                            .concat(
+                                    newHiddenState
+                                            .reshape(numBatch, config.k, 1, hiddenDim)
+                                            .get(selectIndex),
+                                    1);
 
             // To be concatenated into searchState.outputIds
             // [batch, seq_past]
             outputIds = generatedOutput.get(0);
-            NDArray nextOutputIds = searchState.pastOutputIds.concat(outputIds, 1);
+            NDArray nextOutputIds = searchState.getPastOutputIds().concat(outputIds, 1);
 
             // [batch, seq_past]
             NDArray nextPastAttentionMask =
-                    searchState.pastAttentionMask.concat(
-                            manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
+                    searchState
+                            .getPastAttentionMask()
+                            .concat(manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
 
             seqBatcher.seqLength++;
             seqBatcher.data =

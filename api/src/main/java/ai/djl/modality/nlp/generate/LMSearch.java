@@ -50,50 +50,55 @@ public class LMSearch extends AbstractBlock {
                 scope.suppressNotUsedWarning();
 
                 long pastSeqLength =
-                        searchState.pastOutputIds == null
+                        searchState.getPastOutputIds() == null
                                 ? 0
-                                : searchState.pastOutputIds.getShape().get(-1);
+                                : searchState.getPastOutputIds().getShape().get(-1);
                 NDList modelInput =
                         prepareInput(
-                                searchState.nextInputIds,
-                                searchState.pastAttentionMask,
+                                searchState.getNextInputIds(),
+                                searchState.getPastAttentionMask(),
                                 pastSeqLength,
                                 1);
                 CausalLMOutput modelOutput =
-                        lmBlock.forward(modelInput, searchState.pastKeyValues, manager);
+                        lmBlock.forward(modelInput, searchState.getPastKeyValues(), manager);
 
                 NDArray outputIds = StepGeneration.greedyStepGen(modelOutput.logits);
 
                 // Update searchState
-                if (searchState.pastOutputIds == null) {
-                    searchState.pastOutputIds = searchState.nextInputIds;
+                if (searchState.getPastOutputIds() == null) {
+                    searchState.setPastOutputIds(searchState.getNextInputIds());
                 } else {
-                    searchState.pastOutputIds =
-                            searchState.pastOutputIds.concat(searchState.nextInputIds, 1);
+                    searchState.setPastOutputIds(
+                            searchState
+                                    .getPastOutputIds()
+                                    .concat(searchState.getNextInputIds(), 1));
                 }
-                searchState.nextInputIds = outputIds;
-                searchState.pastKeyValues = modelOutput.pastKeyValuesList;
-                searchState.pastAttentionMask =
-                        searchState.pastAttentionMask.concat(
-                                manager.ones(
-                                        new Shape(inputIds.getShape().get(0), 1), DataType.INT64),
-                                1);
+                searchState.setNextInputIds(outputIds);
+                searchState.setPastKeyValues(modelOutput.pastKeyValuesList);
+                searchState.setPastAttentionMask(
+                        searchState
+                                .getPastAttentionMask()
+                                .concat(
+                                        manager.ones(
+                                                new Shape(inputIds.getShape().get(0), 1),
+                                                DataType.INT64),
+                                        1));
 
                 // memory management
                 NDScope.unregister(
-                        searchState.nextInputIds,
-                        searchState.pastAttentionMask,
-                        searchState.pastOutputIds);
-                NDScope.unregister(searchState.pastKeyValues);
+                        searchState.getNextInputIds(),
+                        searchState.getPastAttentionMask(),
+                        searchState.getPastOutputIds());
+                NDScope.unregister(searchState.getPastKeyValues());
             }
 
             // Termination Criteria
             // TODO: <EOS>, delete the sentence and add it to result.
-            if (searchState.pastOutputIds.getShape().get(1) + 1 >= config.maxSeqLength) {
+            if (searchState.getPastOutputIds().getShape().get(1) + 1 >= config.maxSeqLength) {
                 break;
             }
         }
-        return searchState.pastOutputIds.concat(searchState.nextInputIds, 1);
+        return searchState.getPastOutputIds().concat(searchState.getNextInputIds(), 1);
     }
 
     // https://huggingface.co/blog/how-to-generate
@@ -107,7 +112,7 @@ public class LMSearch extends AbstractBlock {
         long numHeads = 0;
         long kvDim = 0;
         while (true) {
-            if (searchState.pastAttentionMask == null) {
+            if (searchState.getPastAttentionMask() == null) {
                 // Initial beams
                 NDList modelInput = prepareInput(inputIds, attentionMask, 0, 1);
                 CausalLMOutput modelOutput = lmBlock.forward(modelInput, null, manager);
@@ -150,11 +155,11 @@ public class LMSearch extends AbstractBlock {
             try (NDScope scope = new NDScope()) {
                 scope.suppressNotUsedWarning();
 
-                long pastSeqLength = searchState.pastOutputIds.getShape().get(-1);
+                long pastSeqLength = searchState.getPastOutputIds().getShape().get(-1);
                 NDList modelInput =
                         prepareInput(
-                                searchState.nextInputIds.reshape(numBatch * numBeam, 1),
-                                searchState.pastAttentionMask.reshape(numBatch * numBeam, -1),
+                                searchState.getNextInputIds().reshape(numBatch * numBeam, 1),
+                                searchState.getPastAttentionMask().reshape(numBatch * numBeam, -1),
                                 pastSeqLength,
                                 config.beam);
 
@@ -169,37 +174,37 @@ public class LMSearch extends AbstractBlock {
                                         finalKvDim);
                 NDList pastKeyValues =
                         new NDList(
-                                searchState.pastKeyValues.stream()
+                                searchState.getPastKeyValues().stream()
                                         .map(fn)
                                         .collect(Collectors.toList()));
                 CausalLMOutput modelOutput = lmBlock.forward(modelInput, pastKeyValues, manager);
 
                 NDList generatedOutput =
                         StepGeneration.beamStepGeneration(
-                                searchState.lastProbs, modelOutput.logits, numBatch, numBeam);
+                                searchState.getLastProbs(), modelOutput.logits, numBatch, numBeam);
 
                 // Update searchState
                 searchState = updateSearchState(searchState, modelOutput, generatedOutput, manager);
 
                 // Memory management
                 NDScope.unregister(
-                        searchState.nextInputIds,
-                        searchState.pastOutputIds,
-                        searchState.pastAttentionMask,
-                        searchState.lastProbs);
-                NDScope.unregister(searchState.pastKeyValues);
+                        searchState.getNextInputIds(),
+                        searchState.getPastOutputIds(),
+                        searchState.getPastAttentionMask(),
+                        searchState.getLastProbs());
+                NDScope.unregister(searchState.getPastKeyValues());
             }
 
             // Termination Criteria
             // TODO: <EOS>, delete the sentence and add it to result.
-            if (searchState.pastOutputIds.getShape().get(-1) + 1 >= config.maxSeqLength) {
+            if (searchState.getPastOutputIds().getShape().get(-1) + 1 >= config.maxSeqLength) {
                 break;
             }
         }
 
         return searchState
-                .pastOutputIds
-                .concat(searchState.nextInputIds, -1)
+                .getPastOutputIds()
+                .concat(searchState.getNextInputIds(), -1)
                 .reshape(numBatch * numBeam, -1);
     }
 
@@ -212,7 +217,7 @@ public class LMSearch extends AbstractBlock {
         NDArray attentionMask = prepareAttentionMaskOffset(inputIds, config);
         ContrastiveBatchTensorList searchState = new ContrastiveBatchTensorList();
         while (true) {
-            if (searchState.pastKeyValues == null) {
+            if (searchState.getPastKeyValues() == null) {
                 NDList modelInput = prepareInput(inputIds, attentionMask, 0, 1);
                 CausalLMOutput output = lmBlock.forward(modelInput, null, manager);
                 NDArray lastLogits = output.logits.get(":, -1, :");
@@ -234,7 +239,10 @@ public class LMSearch extends AbstractBlock {
                 scope.suppressNotUsedWarning();
 
                 NDArray topKIds =
-                        searchState.logits.topK(config.k, -1, true, false).get(1); // [batch, topK]
+                        searchState
+                                .getLogits()
+                                .topK(config.k, -1, true, false)
+                                .get(1); // [batch, topK]
 
                 // Generate model inputs and put candidates together into batch
                 // [batch, topK] -> [batch * [topK]] -> [[batch * [topK]], seqLength=1]
@@ -246,7 +254,7 @@ public class LMSearch extends AbstractBlock {
                 // [batch, heads, seq_past, feature] -> [batch * topK, head, seq_past, feature]
                 NDList kCopyPastKeyValues =
                         new NDList(
-                                searchState.pastKeyValues.stream()
+                                searchState.getPastKeyValues().stream()
                                         .map(ndarray -> ndarray.repeat(0, config.k))
                                         .collect(Collectors.toList()));
                 assert kCopyPastKeyValues.get(0).getDataType() == DataType.FLOAT32
@@ -254,7 +262,8 @@ public class LMSearch extends AbstractBlock {
 
                 // [batch, seq_past] -> [batch * topK, seq_past] -> [batch * topK, seq_past + 1]
                 long numBatch = topKIds.getShape().get(0);
-                NDArray kCopyPastAttentionMask = searchState.pastAttentionMask.repeat(0, config.k);
+                NDArray kCopyPastAttentionMask =
+                        searchState.getPastAttentionMask().repeat(0, config.k);
                 kCopyPastAttentionMask =
                         kCopyPastAttentionMask.concat(
                                 manager.ones(new Shape(numBatch * config.k, 1), DataType.INT64), 1);
@@ -267,7 +276,7 @@ public class LMSearch extends AbstractBlock {
                         prepareInput(
                                 candidateInputIds,
                                 kCopyPastAttentionMask,
-                                searchState.pastOutputIds.getShape().get(-1),
+                                searchState.getPastOutputIds().getShape().get(-1),
                                 config.k);
                 CausalLMOutput candidateOutput =
                         lmBlock.forward(candidateModelInput, kCopyPastKeyValues, manager);
@@ -275,8 +284,8 @@ public class LMSearch extends AbstractBlock {
                 NDList generatedOutput =
                         StepGeneration.constrastiveStepGeneration(
                                 topKIds,
-                                searchState.logits,
-                                searchState.pastHiddenStates,
+                                searchState.getLogits(),
+                                searchState.getPastHiddenStates(),
                                 candidateOutput.allHiddenStates.get(0),
                                 positionOffset,
                                 config.alpha);
@@ -287,20 +296,20 @@ public class LMSearch extends AbstractBlock {
 
                 // Memory
                 NDScope.unregister(
-                        searchState.pastOutputIds,
-                        searchState.pastAttentionMask,
-                        searchState.logits,
-                        searchState.pastHiddenStates);
-                NDScope.unregister(searchState.pastKeyValues);
+                        searchState.getPastOutputIds(),
+                        searchState.getPastAttentionMask(),
+                        searchState.getLogits(),
+                        searchState.getPastHiddenStates());
+                NDScope.unregister(searchState.getPastKeyValues());
             }
 
             // TODO: <EOS>, delete the sentence and add it to result.
-            if (searchState.pastOutputIds.getShape().get(1) >= config.maxSeqLength) {
+            if (searchState.getPastOutputIds().getShape().get(1) >= config.maxSeqLength) {
                 break;
             }
         }
 
-        return searchState.pastOutputIds;
+        return searchState.getPastOutputIds();
     }
 
     private static BeamBatchTensorList updateSearchState(
@@ -309,12 +318,12 @@ public class LMSearch extends AbstractBlock {
             NDList generatedOutput,
             NDManager manager) {
 
-        NDList pastKeyValues = searchState.pastKeyValues;
+        NDList pastKeyValues = searchState.getPastKeyValues();
         long numHeads = pastKeyValues.get(0).getShape().get(-3);
         long kvDim = pastKeyValues.get(0).getShape().get(-1);
-        long numBatch = searchState.pastOutputIds.getShape().get(0);
-        long numBeam = searchState.pastOutputIds.getShape().get(1);
-        long pastSeqLength = searchState.pastOutputIds.getShape().get(-1);
+        long numBatch = searchState.getPastOutputIds().getShape().get(0);
+        long numBeam = searchState.getPastOutputIds().getShape().get(1);
+        long pastSeqLength = searchState.getPastOutputIds().getShape().get(-1);
 
         NDArray nextInputIds = generatedOutput.get(0);
         assert nextInputIds.getShape().getShape().length == 3 : "Wrong Shape";
@@ -335,7 +344,10 @@ public class LMSearch extends AbstractBlock {
         // The pastOutput should be reselected to have the right correspondence to the
         // newInputIds.
         NDArray pastOutputIds =
-                searchState.pastOutputIds.concat(searchState.nextInputIds, -1).get(sourceBeamIndex);
+                searchState
+                        .getPastOutputIds()
+                        .concat(searchState.getNextInputIds(), -1)
+                        .get(sourceBeamIndex);
         Function<NDArray, NDArray> fn =
                 ndarray ->
                         ndarray.reshape(numBatch, numBeam, numHeads, pastSeqLength + 1, kvDim)
@@ -348,7 +360,7 @@ public class LMSearch extends AbstractBlock {
 
         NDArray pastAttentionMask =
                 searchState
-                        .pastAttentionMask
+                        .getPastAttentionMask()
                         .concat(manager.ones(new Shape(numBatch, numBeam, 1), DataType.INT64), -1)
                         .get(sourceBeamIndex);
 
@@ -364,12 +376,12 @@ public class LMSearch extends AbstractBlock {
         // Update searchState for next iteration
         assert candidateOutput.logits.getShape().get(1) == 1
                 : "dimension check: here, outputLogits corresponds to inputSeq == 1";
-        long numBatch = searchState.logits.getShape().get(0);
-        long logitsDim = searchState.logits.getShape().get(1);
-        long pastSeqLengthPriorUpdate = searchState.pastOutputIds.getShape().get(1);
-        long numHeads = searchState.pastKeyValues.get(0).getShape().get(1);
-        long kvDim = searchState.pastKeyValues.get(0).getShape().get(3);
-        long hiddenDim = searchState.pastHiddenStates.getShape().get(2);
+        long numBatch = searchState.getLogits().getShape().get(0);
+        long logitsDim = searchState.getLogits().getShape().get(1);
+        long pastSeqLengthPriorUpdate = searchState.getPastOutputIds().getShape().get(1);
+        long numHeads = searchState.getPastKeyValues().get(0).getShape().get(1);
+        long kvDim = searchState.getPastKeyValues().get(0).getShape().get(3);
+        long hiddenDim = searchState.getPastHiddenStates().getShape().get(2);
         long k = candidateOutput.logits.getShape().get(0) / numBatch;
 
         // [batch, 1]
@@ -402,18 +414,22 @@ public class LMSearch extends AbstractBlock {
         NDArray newHiddenState = candidateOutput.allHiddenStates.get(0);
         assert newHiddenState.getManager() == manager : "possible leaky memory";
         NDArray nextPastHiddenStates =
-                searchState.pastHiddenStates.concat(
-                        newHiddenState.reshape(numBatch, k, 1, hiddenDim).get(selectIndex), 1);
+                searchState
+                        .getPastHiddenStates()
+                        .concat(
+                                newHiddenState.reshape(numBatch, k, 1, hiddenDim).get(selectIndex),
+                                1);
 
         // To be concatenated into searchState.outputIds
         // [batch, seq_past]
         NDArray outputIds = generatedOutput.get(0);
-        NDArray nextOutputIds = searchState.pastOutputIds.concat(outputIds, 1);
+        NDArray nextOutputIds = searchState.getPastOutputIds().concat(outputIds, 1);
 
         // [batch, seq_past]
         NDArray nextPastAttentionMask =
-                searchState.pastAttentionMask.concat(
-                        manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
+                searchState
+                        .getPastAttentionMask()
+                        .concat(manager.ones(new Shape(numBatch, 1), DataType.INT64), 1);
 
         return new ContrastiveBatchTensorList(
                 nextOutputIds,

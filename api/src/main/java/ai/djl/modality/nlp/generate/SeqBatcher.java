@@ -39,8 +39,8 @@ public class SeqBatcher {
         this.data = data;
         this.batchUid = batchUid.getShape().dimension() == 2 ? batchUid : batchUid.reshape(-1, 1);
         this.offSets = offSets.getShape().hashCode() == 2 ? offSets : offSets.reshape(-1, 1);
-        batchSize = data.pastOutputIds.getShape().get(0);
-        seqLength = data.pastOutputIds.getShape().get(1);
+        batchSize = data.getPastOutputIds().getShape().get(0);
+        seqLength = data.getPastOutputIds().getShape().get(1);
         exitIndexEndPosition = new ConcurrentHashMap<>();
     }
 
@@ -168,7 +168,8 @@ public class SeqBatcher {
                 long uid = batchUid.getLong(batchIndex);
                 long offSet = offSets.getLong(batchIndex);
                 NDArray output =
-                        data.pastOutputIds.get("{}, {}:{}", batchIndex, offSet, seqEndPosition);
+                        data.getPastOutputIds()
+                                .get("{}, {}:{}", batchIndex, offSet, seqEndPosition);
                 finishedSequences.put(uid, output);
                 exitIndices.add(batchIndex);
 
