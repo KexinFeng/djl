@@ -158,7 +158,7 @@ public class Shape {
      */
     public long size(int... dimensions) {
         long total = 1;
-        for(long d : dimensions){
+        for (long d : dimensions) {
             long dWrap = d + (d < 0 ? shape.length : 0);
             if (shape[Math.toIntExact(dWrap)] == -1) {
                 return -1;

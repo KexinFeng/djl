@@ -95,7 +95,7 @@ public abstract class SeqBatchScheduler {
             long[] aSequence = inputIds.get("{},:", i).toLongArray();
             int idx = 0;
             while (idx < initSeqSize) {
-                if (aSequence[idx] != config.padTokenId) {
+                if (aSequence[idx] != config.getPadTokenId()) {
                     break;
                 }
                 idx++;
@@ -122,7 +122,7 @@ public abstract class SeqBatchScheduler {
             long[] aSequence = inputIds.get("{},:", i).toLongArray();
             int idx = 0;
             while (idx < initSeqSize) {
-                if (aSequence[idx] != config.padTokenId) {
+                if (aSequence[idx] != config.getPadTokenId()) {
                     break;
                 }
                 idx++;

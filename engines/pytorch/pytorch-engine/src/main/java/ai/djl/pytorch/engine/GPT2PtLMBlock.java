@@ -51,14 +51,14 @@ public class GPT2PtLMBlock extends LMBlock {
                                     inputNative[1],
                                     inputNative[2],
                                     IValueUtils.toTupleIValue(
-                                            pastKeyValues, new long[] {config.numLayers, 2}));
+                                            pastKeyValues, new long[] {config.getNumLayers(), 2}));
         }
         NDList output = resultIValue.toNDList(manager);
         Arrays.stream(inputNative).forEach(IValue::close);
 
         return new CausalLMOutput(
                 output.get(0),
-                output.subList(1, config.numLayers * 2 + 1),
-                output.subNDList(config.numLayers * 2 + 2));
+                output.subList(1, config.getNumLayers() * 2 + 1),
+                output.subNDList(config.getNumLayers() * 2 + 2));
     }
 }

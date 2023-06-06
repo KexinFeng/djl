@@ -71,9 +71,9 @@ public final class AutoRegressiveSearch {
         LMBlock lmBlock = lmBlockPt;
         try (NDManager manager = NDManager.newBaseManager()) {
             SearchConfig config = new SearchConfig();
-            config.maxSeqLength = 60;
-            config.alpha = 0.6f;
-            config.k = 3;
+            config.setMaxSeqLength(60);
+            config.setAlpha(0.6f);
+            config.setK(3);
 
             // [r'DeepMind Company is',
             // r'Memories follow me left and right. I can']
@@ -83,8 +83,8 @@ public final class AutoRegressiveSearch {
                                 {220, 220, 220, 220, 220, 220, 29744, 28478, 5834, 318},
                                 {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
                             });
-            config.padTokenId = 220;
-            config.suffixPadding = false;
+            config.setPadTokenId(220);
+            config.setSuffixPadding(false);
 
             LMSearch lmSearch;
             lmSearch = new LMSearch(lmBlock, "constrastive", config);
@@ -106,7 +106,7 @@ public final class AutoRegressiveSearch {
         try (NDManager manager = NDManager.newBaseManager()) {
 
             SearchConfig config = new SearchConfig();
-            config.maxSeqLength = 60;
+            config.setMaxSeqLength(60);
 
             // [r'DeepMind Company is',
             // r'Memories follow me left and right. I can']
@@ -116,8 +116,8 @@ public final class AutoRegressiveSearch {
                                 {220, 220, 220, 220, 220, 220, 29744, 28478, 5834, 318},
                                 {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
                             });
-            config.padTokenId = 220;
-            config.suffixPadding = false;
+            config.setPadTokenId(220);
+            config.setSuffixPadding(false);
 
             LMSearch lmSearch = new LMSearch(lmBlock, "greedy", config);
 
@@ -138,8 +138,8 @@ public final class AutoRegressiveSearch {
         try (NDManager manager = NDManager.newBaseManager()) {
 
             SearchConfig config = new SearchConfig();
-            config.maxSeqLength = 60;
-            config.beam = 3;
+            config.setMaxSeqLength(60);
+            config.setBeam(3);
 
             // [r'DeepMind Company is',
             // r'Memories follow me left and right. I can']
@@ -149,8 +149,8 @@ public final class AutoRegressiveSearch {
                                 {50256, 50256, 50256, 50256, 50256, 50256, 29744, 28478, 5834, 318},
                                 {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
                             });
-            config.padTokenId = 50256;
-            config.suffixPadding = false;
+            config.setPadTokenId(50256);
+            config.setSuffixPadding(false);
 
             LMSearch lmSearch = new LMSearch(lmBlock, "beam", config);
 
@@ -168,8 +168,8 @@ public final class AutoRegressiveSearch {
         try (NDManager manager = NDManager.newBaseManager()) {
 
             SearchConfig config = new SearchConfig();
-            config.maxSeqLength = 60;
-            config.beam = 3;
+            config.setMaxSeqLength(60);
+            config.setBeam(3);
 
             // [r'DeepMind Company is',
             // r'Memories follow me left and right. I can']
@@ -180,8 +180,8 @@ public final class AutoRegressiveSearch {
                                 {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
                                 //                                {220, 29744, 28478, 5834, 318}
                             });
-            config.padTokenId = 220;
-            config.suffixPadding = false;
+            config.setPadTokenId(220);
+            config.setSuffixPadding(false);
             // The positionIds is not effective in onnx model traced from huggingface optimum.
 
             LMSearch lmSearch = new LMSearch(lmBlock, "beam", config);

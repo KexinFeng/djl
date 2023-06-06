@@ -32,7 +32,7 @@ public class LMSearch extends AbstractBlock {
     private SearchConfig config;
     private LMBlock lmBlock;
 
-    public NDArray positionOffset;
+    private NDArray positionOffset;
 
     public LMSearch(LMBlock lmBlock, String searchName, SearchConfig searchConfig) {
         this.lmBlock = lmBlock;
@@ -62,7 +62,7 @@ public class LMSearch extends AbstractBlock {
                 CausalLMOutput modelOutput =
                         lmBlock.forward(modelInput, searchState.getPastKeyValues(), manager);
 
-                NDArray outputIds = StepGeneration.greedyStepGen(modelOutput.logits);
+                NDArray outputIds = StepGeneration.greedyStepGen(modelOutput.getLogits());
 
                 // Update searchState
                 if (searchState.getPastOutputIds() == null) {
@@ -74,7 +74,7 @@ public class LMSearch extends AbstractBlock {
                                     .concat(searchState.getNextInputIds(), 1));
                 }
                 searchState.setNextInputIds(outputIds);
-                searchState.setPastKeyValues(modelOutput.pastKeyValuesList);
+                searchState.setPastKeyValues(modelOutput.getPastKeyValuesList());
                 searchState.setPastAttentionMask(
                         searchState
                                 .getPastAttentionMask()
@@ -94,7 +94,7 @@ public class LMSearch extends AbstractBlock {
 
             // Termination Criteria
             // TODO: <EOS>, delete the sentence and add it to result.
-            if (searchState.getPastOutputIds().getShape().get(1) + 1 >= config.maxSeqLength) {
+            if (searchState.getPastOutputIds().getShape().get(1) + 1 >= config.getMaxSeqLength()) {
                 break;
             }
         }
@@ -105,7 +105,7 @@ public class LMSearch extends AbstractBlock {
     public NDArray beamSearch(NDArray inputIds) {
         NDArray attentionMask = prepareAttentionMaskOffset(inputIds, config);
         NDManager manager = inputIds.getManager();
-        long numBeam = config.beam;
+        long numBeam = config.getBeam();
         long numBatch = inputIds.getShape().get(0);
         BeamBatchTensorList searchState = new BeamBatchTensorList();
 
@@ -118,7 +118,7 @@ public class LMSearch extends AbstractBlock {
                 CausalLMOutput modelOutput = lmBlock.forward(modelInput, null, manager);
 
                 // [batch, probDim]
-                NDArray allProbs = modelOutput.logits.get(":, -1, :").softmax(1);
+                NDArray allProbs = modelOutput.getLogits().get(":, -1, :").softmax(1);
 
                 // [batch, beam]
                 NDList topK = allProbs.topK((int) numBeam, -1, true, false);
@@ -138,7 +138,7 @@ public class LMSearch extends AbstractBlock {
                 Function<NDArray, NDArray> fn = ndarray -> ndarray.expandDims(1).repeat(1, numBeam);
                 NDList pastKeyValues =
                         new NDList(
-                                modelOutput.pastKeyValuesList.stream()
+                                modelOutput.getPastKeyValuesList().stream()
                                         .map(fn)
                                         .collect(Collectors.toList()));
                 // [batch, beam, seq_past]
@@ -161,7 +161,7 @@ public class LMSearch extends AbstractBlock {
                                 searchState.getNextInputIds().reshape(numBatch * numBeam, 1),
                                 searchState.getPastAttentionMask().reshape(numBatch * numBeam, -1),
                                 pastSeqLength,
-                                config.beam);
+                                config.getBeam());
 
                 final long finalNumHeads = numHeads;
                 final long finalKvDim = kvDim;
@@ -181,7 +181,10 @@ public class LMSearch extends AbstractBlock {
 
                 NDList generatedOutput =
                         StepGeneration.beamStepGeneration(
-                                searchState.getLastProbs(), modelOutput.logits, numBatch, numBeam);
+                                searchState.getLastProbs(),
+                                modelOutput.getLogits(),
+                                numBatch,
+                                numBeam);
 
                 // Update searchState
                 searchState = updateSearchState(searchState, modelOutput, generatedOutput, manager);
@@ -197,7 +200,7 @@ public class LMSearch extends AbstractBlock {
 
             // Termination Criteria
             // TODO: <EOS>, delete the sentence and add it to result.
-            if (searchState.getPastOutputIds().getShape().get(-1) + 1 >= config.maxSeqLength) {
+            if (searchState.getPastOutputIds().getShape().get(-1) + 1 >= config.getMaxSeqLength()) {
                 break;
             }
         }
@@ -220,14 +223,14 @@ public class LMSearch extends AbstractBlock {
             if (searchState.getPastKeyValues() == null) {
                 NDList modelInput = prepareInput(inputIds, attentionMask, 0, 1);
                 CausalLMOutput output = lmBlock.forward(modelInput, null, manager);
-                NDArray lastLogits = output.logits.get(":, -1, :");
+                NDArray lastLogits = output.getLogits().get(":, -1, :");
                 searchState =
                         new ContrastiveBatchTensorList(
                                 inputIds,
                                 attentionMask,
-                                output.allHiddenStates.get(0),
+                                output.getAllHiddenStates().get(0),
                                 lastLogits,
-                                output.pastKeyValuesList,
+                                output.getPastKeyValuesList(),
                                 new long[] {});
             }
 
@@ -241,7 +244,7 @@ public class LMSearch extends AbstractBlock {
                 NDArray topKIds =
                         searchState
                                 .getLogits()
-                                .topK(config.k, -1, true, false)
+                                .topK(config.getK(), -1, true, false)
                                 .get(1); // [batch, topK]
 
                 // Generate model inputs and put candidates together into batch
@@ -255,7 +258,7 @@ public class LMSearch extends AbstractBlock {
                 NDList kCopyPastKeyValues =
                         new NDList(
                                 searchState.getPastKeyValues().stream()
-                                        .map(ndarray -> ndarray.repeat(0, config.k))
+                                        .map(ndarray -> ndarray.repeat(0, config.getK()))
                                         .collect(Collectors.toList()));
                 assert kCopyPastKeyValues.get(0).getDataType() == DataType.FLOAT32
                         : "inputIds datatype should be Float32";
@@ -263,10 +266,12 @@ public class LMSearch extends AbstractBlock {
                 // [batch, seq_past] -> [batch * topK, seq_past] -> [batch * topK, seq_past + 1]
                 long numBatch = topKIds.getShape().get(0);
                 NDArray kCopyPastAttentionMask =
-                        searchState.getPastAttentionMask().repeat(0, config.k);
+                        searchState.getPastAttentionMask().repeat(0, config.getK());
                 kCopyPastAttentionMask =
                         kCopyPastAttentionMask.concat(
-                                manager.ones(new Shape(numBatch * config.k, 1), DataType.INT64), 1);
+                                manager.ones(
+                                        new Shape(numBatch * config.getK(), 1), DataType.INT64),
+                                1);
                 assert kCopyPastKeyValues.get(0).getShape().get(-2) + 1
                                 == kCopyPastAttentionMask.getShape().get(-1)
                         : "attentionMask_seq = past_seq + new_input_seq";
@@ -277,7 +282,7 @@ public class LMSearch extends AbstractBlock {
                                 candidateInputIds,
                                 kCopyPastAttentionMask,
                                 searchState.getPastOutputIds().getShape().get(-1),
-                                config.k);
+                                config.getK());
                 CausalLMOutput candidateOutput =
                         lmBlock.forward(candidateModelInput, kCopyPastKeyValues, manager);
 
@@ -286,9 +291,9 @@ public class LMSearch extends AbstractBlock {
                                 topKIds,
                                 searchState.getLogits(),
                                 searchState.getPastHiddenStates(),
-                                candidateOutput.allHiddenStates.get(0),
+                                candidateOutput.getAllHiddenStates().get(0),
                                 positionOffset,
-                                config.alpha);
+                                config.getAlpha());
 
                 // Update searchState for next loop
                 searchState =
@@ -304,7 +309,7 @@ public class LMSearch extends AbstractBlock {
             }
 
             // TODO: <EOS>, delete the sentence and add it to result.
-            if (searchState.getPastOutputIds().getShape().get(1) >= config.maxSeqLength) {
+            if (searchState.getPastOutputIds().getShape().get(1) >= config.getMaxSeqLength()) {
                 break;
             }
         }
@@ -354,7 +359,7 @@ public class LMSearch extends AbstractBlock {
                                 .get(sourceBeamIndex);
         pastKeyValues =
                 new NDList(
-                        modelOutput.pastKeyValuesList.stream()
+                        modelOutput.getPastKeyValuesList().stream()
                                 .map(fn)
                                 .collect(Collectors.toList()));
 
@@ -374,7 +379,7 @@ public class LMSearch extends AbstractBlock {
             NDList generatedOutput,
             NDManager manager) {
         // Update searchState for next iteration
-        assert candidateOutput.logits.getShape().get(1) == 1
+        assert candidateOutput.getLogits().getShape().get(1) == 1
                 : "dimension check: here, outputLogits corresponds to inputSeq == 1";
         long numBatch = searchState.getLogits().getShape().get(0);
         long logitsDim = searchState.getLogits().getShape().get(1);
@@ -382,7 +387,7 @@ public class LMSearch extends AbstractBlock {
         long numHeads = searchState.getPastKeyValues().get(0).getShape().get(1);
         long kvDim = searchState.getPastKeyValues().get(0).getShape().get(3);
         long hiddenDim = searchState.getPastHiddenStates().getShape().get(2);
-        long k = candidateOutput.logits.getShape().get(0) / numBatch;
+        long k = candidateOutput.getLogits().getShape().get(0) / numBatch;
 
         // [batch, 1]
         NDArray select = generatedOutput.get(1);
@@ -395,7 +400,7 @@ public class LMSearch extends AbstractBlock {
         // Take from candidateOutput
         // [batch, k, inputSeq=1, logitsDim] --select--> [batch, logitDim]
         NDArray nextLogits =
-                candidateOutput.logits.reshape(numBatch, k, logitsDim).get(selectIndex);
+                candidateOutput.getLogits().reshape(numBatch, k, logitsDim).get(selectIndex);
 
         // Take from candidateOutput
         // [batch * k, heads, seq_past, feature] --select--> [batch, heads, seq_past, feature]
@@ -405,13 +410,13 @@ public class LMSearch extends AbstractBlock {
                                 .get(selectIndex);
         NDList nextPastKeyValue =
                 new NDList(
-                        candidateOutput.pastKeyValuesList.stream()
+                        candidateOutput.getPastKeyValuesList().stream()
                                 .map(fn)
                                 .collect(Collectors.toList()));
 
         // To be concatenated into searchState.pastHiddenStates
         // [batch * k, inputSeq=1, hiddenDim]
-        NDArray newHiddenState = candidateOutput.allHiddenStates.get(0);
+        NDArray newHiddenState = candidateOutput.getAllHiddenStates().get(0);
         assert newHiddenState.getManager() == manager : "possible leaky memory";
         NDArray nextPastHiddenStates =
                 searchState
@@ -443,7 +448,7 @@ public class LMSearch extends AbstractBlock {
     private NDArray prepareAttentionMaskOffset(NDArray inputIds, SearchConfig config) {
         // prepare attentionMask and positionOffset
         // Used to initialize the search
-        boolean suffixPadding = config.suffixPadding;
+        boolean suffixPadding = config.isSuffixPadding();
         NDManager manager = inputIds.getManager();
         int numBatch = (int) inputIds.getShape().get(0);
         int initSeqSize = (int) inputIds.getShape().get(1);
@@ -458,8 +463,8 @@ public class LMSearch extends AbstractBlock {
             long[] aSequence = inputIds.get("{},:", i).toLongArray();
             int idx = 0;
             while (idx < initSeqSize) {
-                if (suffixPadding && aSequence[idx] == config.padTokenId
-                        || !suffixPadding && aSequence[idx] != config.padTokenId) {
+                if (suffixPadding && aSequence[idx] == config.getPadTokenId()
+                        || !suffixPadding && aSequence[idx] != config.getPadTokenId()) {
                     break;
                 }
                 idx++;

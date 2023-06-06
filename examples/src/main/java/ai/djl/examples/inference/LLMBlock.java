@@ -102,7 +102,7 @@ public final class LLMBlock {
             // Inference with cached key_values input
             /////////////////////////////////////////////
 
-            long pastSeqLen = outInit.pastKeyValuesList.get(0).getShape().size(-2);
+            long pastSeqLen = outInit.getPastKeyValuesList().get(0).getShape().size(-2);
             inputIds = manager.create(new long[] {404, 403, 402, 401}, new Shape(numBatch, 2));
             positionIds =
                     manager.arange(
@@ -121,7 +121,7 @@ public final class LLMBlock {
 
             generator.forward(
                     new NDList(inputIds, positionIds, attentionMask),
-                    outInit.pastKeyValuesList,
+                    outInit.getPastKeyValuesList(),
                     manager);
         }
         models.forEach(Model::close);
@@ -163,7 +163,7 @@ public final class LLMBlock {
             // Inference with cached key_values input
             /////////////////////////////////////////////
 
-            long pastSeqLen = outInit.pastKeyValuesList.get(0).getShape().size(-2);
+            long pastSeqLen = outInit.getPastKeyValuesList().get(0).getShape().size(-2);
             inputIds = manager.create(new int[] {404, 403, 402, 401}, new Shape(numBatch, 2));
             positionIds =
                     manager.arange(
@@ -180,7 +180,7 @@ public final class LLMBlock {
 
             generator.forward(
                     new NDList(inputIds, positionIds, attentionMask),
-                    outInit.pastKeyValuesList,
+                    outInit.getPastKeyValuesList(),
                     manager);
         }
         models.forEach(Model::close);

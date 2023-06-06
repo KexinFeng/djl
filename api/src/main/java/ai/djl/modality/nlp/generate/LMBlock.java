@@ -51,9 +51,9 @@ public abstract class LMBlock extends AbstractBlock {
         // inputIds, positionIds, attentionMask
         CausalLMOutput output =
                 forward(inputs.subList(0, 3), inputs.subNDList(3), inputs.getManager());
-        return new NDList(output.logits)
-                .addAll(output.allHiddenStates) // allHiddenStates could be null
-                .addAll(output.pastKeyValuesList);
+        return new NDList(output.getLogits())
+                .addAll(output.getAllHiddenStates()) // allHiddenStates could be null
+                .addAll(output.getPastKeyValuesList());
     }
 
     /** {@inheritDoc} */

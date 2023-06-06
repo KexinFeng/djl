@@ -29,7 +29,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
             CausalLMOutput output =
                     lmBlock.forward(
                             new NDList(inputIds, positionIds, attentionMask), null, manager);
-            NDArray lastLogits = output.logits.get(":, -1, :");
+            NDArray lastLogits = output.getLogits().get(":, -1, :");
 
             // Used to mark the sequence dimension's ordinal number for each tensor in the
             // serialized
@@ -43,15 +43,15 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                     new ContrastiveBatchTensorList(
                             inputIds,
                             attentionMask,
-                            output.allHiddenStates.get(0),
+                            output.getAllHiddenStates().get(0),
                             lastLogits,
-                            output.pastKeyValuesList,
+                            output.getPastKeyValuesList(),
                             seqDimOrder);
             SeqBatcher ret = new SeqBatcher(batchTensorList, batchUids, initOffSets, manager);
 
             // memory management
-            NDScope.unregister(output.pastKeyValuesList);
-            NDScope.unregister(output.allHiddenStates.get(0), attentionMask, lastLogits);
+            NDScope.unregister(output.getPastKeyValuesList());
+            NDScope.unregister(output.getAllHiddenStates().get(0), attentionMask, lastLogits);
             NDScope.unregister(ret.offSets, ret.batchUid);
 
             return ret;
@@ -66,7 +66,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
 
             /* Prepare input for one inference call */
             NDArray logits = ((ContrastiveBatchTensorList) seqBatcher.getData()).getLogits();
-            NDArray topKIds = logits.topK(config.k, -1, true, false).get(1); // [batch, topK]
+            NDArray topKIds = logits.topK(config.getK(), -1, true, false).get(1); // [batch, topK]
             ContrastiveBatchTensorList searchState = (ContrastiveBatchTensorList) seqBatcher.data;
 
             // Embed the topk dimension into batch dimension for an inference all
@@ -80,17 +80,19 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
             NDList kCopyPastKeyValues =
                     new NDList(
                             searchState.getPastKeyValues().stream()
-                                    .map(ndarray -> ndarray.repeat(0, config.k))
+                                    .map(ndarray -> ndarray.repeat(0, config.getK()))
                                     .collect(Collectors.toList()));
             assert kCopyPastKeyValues.get(0).getDataType() == DataType.FLOAT32
                     : "inputIds datatype should be Float32";
 
             // [batch, seq_past] -> [batch * topK, seq_past] -> [batch * topK, seq_past + 1]
             long numBatch = topKIds.getShape().get(0);
-            NDArray kCopyPastAttentionMask = searchState.getPastAttentionMask().repeat(0, config.k);
+            NDArray kCopyPastAttentionMask =
+                    searchState.getPastAttentionMask().repeat(0, config.getK());
             kCopyPastAttentionMask =
                     kCopyPastAttentionMask.concat(
-                            manager.ones(new Shape(numBatch * config.k, 1), DataType.INT64), 1);
+                            manager.ones(new Shape(numBatch * config.getK(), 1), DataType.INT64),
+                            1);
             assert kCopyPastKeyValues.get(0).getShape().get(-2) + 1
                             == kCopyPastAttentionMask.getShape().get(-1)
                     : "attentionMask_seq = past_seq + new_input_seq";
@@ -101,7 +103,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                             candidateInputIds,
                             seqBatcher.offSets,
                             searchState.getPastOutputIds().getShape().get(-1),
-                            config.k);
+                            config.getK());
             CausalLMOutput candidateOutput =
                     lmBlock.forward(
                             new NDList(
@@ -116,9 +118,9 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                             topKIds,
                             logits,
                             searchState.getPastHiddenStates(),
-                            candidateOutput.allHiddenStates.get(0),
+                            candidateOutput.getAllHiddenStates().get(0),
                             seqBatcher.offSets,
-                            config.alpha);
+                            config.getAlpha());
 
             /* Update searchState for next loop */
             long logitsDim = logits.getShape().get(1);
@@ -138,7 +140,10 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
             // Take from candidateOutput
             // [batch, k, inputSeq=1, logitsDim] --select--> [batch, logitDim]
             NDArray nextLogits =
-                    candidateOutput.logits.reshape(numBatch, config.k, logitsDim).get(selectIndex);
+                    candidateOutput
+                            .getLogits()
+                            .reshape(numBatch, config.getK(), logitsDim)
+                            .get(selectIndex);
 
             // Take from candidateOutput
             // [batch * k, heads, seq_past, feature] --select--> [batch, heads, seq_past, feature]
@@ -146,27 +151,27 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                     ndarray ->
                             ndarray.reshape(
                                             numBatch,
-                                            config.k,
+                                            config.getK(),
                                             numHeads,
                                             currentSeqLength + 1,
                                             kvDim)
                                     .get(selectIndex);
             NDList nextPastKeyValue =
                     new NDList(
-                            candidateOutput.pastKeyValuesList.stream()
+                            candidateOutput.getPastKeyValuesList().stream()
                                     .map(fn)
                                     .collect(Collectors.toList()));
 
             // To be concatenated into searchState.pastHiddenStates
             // [batch * k, inputSeq=1, hiddenDim]
-            NDArray newHiddenState = candidateOutput.allHiddenStates.get(0);
+            NDArray newHiddenState = candidateOutput.getAllHiddenStates().get(0);
             assert newHiddenState.getManager() == manager : "possible leaky memory";
             NDArray nextPastHiddenStates =
                     searchState
                             .getPastHiddenStates()
                             .concat(
                                     newHiddenState
-                                            .reshape(numBatch, config.k, 1, hiddenDim)
+                                            .reshape(numBatch, config.getK(), 1, hiddenDim)
                                             .get(selectIndex),
                                     1);
 
@@ -192,7 +197,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                             searchState.getSeqDimOrder());
 
             /* Exit criteria */
-            seqBatcher.exitCriteria(outputIds, config.maxSeqLength, config.eosTokenId);
+            seqBatcher.exitCriteria(outputIds, config.getMaxSeqLength(), config.getEosTokenId());
 
             // Memory management
             NDScope.unregister(nextOutputIds);

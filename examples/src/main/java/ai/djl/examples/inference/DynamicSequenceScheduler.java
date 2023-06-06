@@ -51,10 +51,10 @@ public final class DynamicSequenceScheduler {
         try (NDManager manager = NDManager.newBaseManager()) {
 
             SearchConfig config = new SearchConfig();
-            config.maxSeqLength = 30;
-            config.alpha = 0.6f;
-            config.k = 5;
-            config.padTokenId = 220;
+            config.setMaxSeqLength(30);
+            config.setAlpha(0.6f);
+            config.setK(5);
+            config.setPadTokenId(220);
 
             ContrastiveSeqBatchScheduler scheduler =
                     new ContrastiveSeqBatchScheduler(lmBlock, config);
@@ -142,7 +142,7 @@ public final class DynamicSequenceScheduler {
                             });
 
             // Collect the rest of the results [0, 4]
-            boolean emptyBatch = scheduler.incrementForward(config.maxSeqLength);
+            boolean emptyBatch = scheduler.incrementForward(config.getMaxSeqLength());
             Map<Long, NDArray> output2 = scheduler.collectResults();
 
             testResult &= output1.get(1L).equals(expected1);

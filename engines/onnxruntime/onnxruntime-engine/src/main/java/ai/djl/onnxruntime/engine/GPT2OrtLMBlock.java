@@ -35,9 +35,9 @@ public class GPT2OrtLMBlock extends LMBlock {
 
     private NDList dummyPastKeyValues(NDArray inputIds, NDManager manager) {
         long numBatch = inputIds.getShape().get(0);
-        long kvDim = config.kvDim;
-        int numAttentionHeads = config.numAttentionHeads;
-        int numLayers = config.numLayers;
+        long kvDim = config.getKvDim();
+        int numAttentionHeads = config.getNumAttentionHeads();
+        int numLayers = config.getNumLayers();
 
         NDArray keyOrValue = manager.zeros(new Shape(numBatch, numAttentionHeads, 1, kvDim));
         NDList output = new NDList();

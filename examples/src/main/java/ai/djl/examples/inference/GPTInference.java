@@ -77,7 +77,7 @@ public final class GPTInference {
         LMBlock lmBlock = Engine.getEngine("PyTorch").newLMBlock("GPT2", new GPTConfig(), blocks);
 
         SearchConfig config = new SearchConfig();
-        config.maxSeqLength = 60;
+        config.setMaxSeqLength(60);
         LMSearch lmSearch = new LMSearch(lmBlock, "greedy", config);
 
         String[] input = {"DeepMind Company is"};
@@ -94,7 +94,8 @@ public final class GPTInference {
 
             logger.info("{}", expected.equals(outputString));
         }
-        // According to the last code review meeting, the conclusion was to only put tokenizer's encoding
+        // According to the last code review meeting, the conclusion was to only put tokenizer's
+        // encoding
         // and decoding part into the translator's pre/post process. That is also why Zach proposed
         // to make LMSearch integrate AbstractBlock so that it will be called by predictor.
 
@@ -176,9 +177,9 @@ public final class GPTInference {
 
     static NDList initPastKeyValues(NDManager manager, int numBatch) {
         GPTConfig config = new GPTConfig();
-        long kvDim = config.kvDim;
-        int numAttentionHeads = config.numAttentionHeads;
-        int numLayers = config.numLayers;
+        long kvDim = config.getKvDim();
+        int numAttentionHeads = config.getNumAttentionHeads();
+        int numLayers = config.getNumLayers();
 
         NDList list = new NDList(2 * numLayers);
         for (int i = 0; i < numLayers; ++i) {
