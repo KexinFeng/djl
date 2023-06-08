@@ -65,7 +65,8 @@ public final class LLMBlock {
         }
 
         return new Pair<>(
-                // Creating a LMBlock calls GPT2PtLMBlock.java which is engine specific, whose package
+                // Creating a LMBlock calls GPT2PtLMBlock.java which is engine specific, whose
+                // package
                 // `pytorch-engines.main` cannot be loaded here.
                 Engine.getEngine(engine).newLMBlock(modelName, new GPTConfig(), blocks), models);
     }
@@ -131,10 +132,7 @@ public final class LLMBlock {
 
     public static void mainPt()
             throws ModelNotFoundException, MalformedModelException, IOException {
-        String[] modelUrls = {
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"
-        };
+        String[] modelUrls = {"https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"};
 
         Pair<Block, List<Model>> result = LLMBlock.getLMBlock(modelUrls, "PyTorch", "GPT2");
         LMBlock generator = (LMBlock) result.getKey();

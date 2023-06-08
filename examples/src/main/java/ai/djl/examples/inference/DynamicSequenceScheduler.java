@@ -38,10 +38,7 @@ public final class DynamicSequenceScheduler {
 
     public static boolean mainContrastivePt()
             throws ModelNotFoundException, MalformedModelException, IOException {
-        String[] modelUrls = {
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"
-        };
+        String[] modelUrls = {"https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"};
 
         Pair<Block, List<Model>> result = LLMBlock.getLMBlock(modelUrls, "PyTorch", "GPT2");
         LMBlock lmBlock = (LMBlock) result.getKey();

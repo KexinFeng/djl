@@ -13,14 +13,12 @@
 package ai.djl.engine;
 
 import ai.djl.Device;
-import ai.djl.MalformedModelException;
 import ai.djl.Model;
 import ai.djl.modality.nlp.generate.GPTConfig;
 import ai.djl.modality.nlp.generate.LMBlock;
 import ai.djl.ndarray.NDManager;
 import ai.djl.nn.Block;
 import ai.djl.nn.SymbolBlock;
-import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.training.GradientCollector;
 import ai.djl.training.LocalParameterServer;
 import ai.djl.training.ParameterServer;
@@ -307,8 +305,7 @@ public abstract class Engine {
      */
     public abstract NDManager newBaseManager(Device device);
 
-    public LMBlock newLMBlock(String languageModel, GPTConfig gptConfig, Block[] blocks)
-            throws ModelNotFoundException, MalformedModelException, IOException {
+    public LMBlock newLMBlock(String languageModel, GPTConfig gptConfig, Block[] blocks) {
         throw new UnsupportedOperationException("Not supported.");
     }
 

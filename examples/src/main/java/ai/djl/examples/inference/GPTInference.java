@@ -14,7 +14,6 @@ package ai.djl.examples.inference;
 
 import ai.djl.MalformedModelException;
 import ai.djl.Model;
-import ai.djl.engine.Engine;
 import ai.djl.huggingface.tokenizers.Encoding;
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer;
 import ai.djl.inference.Predictor;
@@ -31,18 +30,15 @@ import ai.djl.nn.Block;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
-import ai.djl.training.util.ProgressBar;
 import ai.djl.translate.NoBatchifyTranslator;
 import ai.djl.translate.TranslateException;
 import ai.djl.translate.TranslatorContext;
-
 import ai.djl.util.Pair;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.LinkedList;
 import java.util.List;
 
 public final class GPTInference {
@@ -62,13 +58,14 @@ public final class GPTInference {
             throws ModelNotFoundException, MalformedModelException, IOException,
                     TranslateException {
         String[] modelUrls = {
-                "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
-                "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"
+            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
         };
         Pair<Block, List<Model>> result = LLMBlock.getLMBlock(modelUrls, "PyTorch", "GPT2");
         LMBlock lmBlock = (LMBlock) result.getKey();
-        // An adapter class lmBlock along with the lmBlock.forward call is inevitable, because, as shown
-        // in comments in L168-170, the searching code should be general rather than specific to a certain model.
+        // An adapter class lmBlock along with the lmBlock.forward call is inevitable, because, as
+        // shown
+        // in comments in L168-170, the searching code should be general rather than specific to a
+        // certain model.
 
         SearchConfig config = new SearchConfig();
         config.setMaxSeqLength(60);
@@ -81,7 +78,8 @@ public final class GPTInference {
             try (Predictor<String[], String> predictor =
                     model.newPredictor(new GPTTranslator()); ) {
                 // According to the last code review meeting, the translator's pre/post process only
-                // takes care of the tokenizer's encoding and decoding part. It's also why Zach proposed
+                // takes care of the tokenizer's encoding and decoding part. It's also why Zach
+                // proposed
                 // to make LMSearch inherit AbstractBlock, so that it will be wrapped in a Model and
                 // utilizes the translator
                 String output = predictor.predict(input);

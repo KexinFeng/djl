@@ -43,10 +43,7 @@ public final class AutoRegressiveSearch {
 
     public AutoRegressiveSearch()
             throws ModelNotFoundException, MalformedModelException, IOException {
-        String[] modelUrls = {
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2_init.pt.zip",
-            "https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"
-        };
+        String[] modelUrls = {"https://djl-misc.s3.amazonaws.com/test/models/gpt2/gpt2.pt.zip"};
         Pair<Block, List<Model>> result = LLMBlock.getLMBlock(modelUrls, "PyTorch", "GPT2");
         lmBlockPt = (LMBlock) result.getKey();
         modelsPt = result.getValue();
@@ -66,8 +63,7 @@ public final class AutoRegressiveSearch {
         mainBeamOnnx(args);
     }
 
-    public boolean mainContrastivePt(String[] args)
-            throws ModelNotFoundException, MalformedModelException, IOException {
+    public boolean mainContrastivePt(String[] args) {
         LMBlock lmBlock = lmBlockPt;
         try (NDManager manager = NDManager.newBaseManager()) {
             SearchConfig config = new SearchConfig();
@@ -100,8 +96,7 @@ public final class AutoRegressiveSearch {
         }
     }
 
-    public boolean mainGreedyPt(String[] args)
-            throws ModelNotFoundException, MalformedModelException, IOException {
+    public boolean mainGreedyPt(String[] args) {
         LMBlock lmBlock = lmBlockPt;
         try (NDManager manager = NDManager.newBaseManager()) {
 
@@ -132,8 +127,7 @@ public final class AutoRegressiveSearch {
         }
     }
 
-    public boolean mainBeamPt(String[] args)
-            throws ModelNotFoundException, MalformedModelException, IOException {
+    public boolean mainBeamPt(String[] args) {
         LMBlock lmBlock = lmBlockPt;
         try (NDManager manager = NDManager.newBaseManager()) {
 
@@ -178,7 +172,6 @@ public final class AutoRegressiveSearch {
                             new long[][] {
                                 {220, 220, 220, 220, 220, 220, 29744, 28478, 5834, 318},
                                 {13579, 1749, 1061, 502, 1364, 290, 826, 13, 314, 460}
-                                //                                {220, 29744, 28478, 5834, 318}
                             });
             config.setPadTokenId(220);
             config.setSuffixPadding(false);

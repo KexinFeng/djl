@@ -157,6 +157,10 @@ public class Shape {
      * @throws IllegalArgumentException thrown if passed an invalid dimension
      */
     public long size(int... dimensions) {
+        // Many NDArray operation like concat already allows negative axis for a long time and there
+        // is no complaints. We shouldn't throw negative axis exception for every NDArray operation.
+        // Besides, without this, the readability of NDArray computation intense part would be
+        // horrible, like that in contrastive search, which becomes hard to maintain.
         long total = 1;
         for (long d : dimensions) {
             long dWrap = d + (d < 0 ? shape.length : 0);
