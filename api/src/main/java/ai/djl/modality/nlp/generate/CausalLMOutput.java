@@ -13,7 +13,7 @@ public class CausalLMOutput {
 
     // [batch, seq, dim] * (layers+1) -> take -1
     // The vec. rep. of a sequence that ends at an element in seq-dim. seq-dim-size = |inputIds|
-    private NDList allHiddenStates;
+    private NDArray hiddenStates;
 
     // (k, v) * numLayer,
     // kv: [batch, heads, seq_past, feature]
@@ -25,10 +25,10 @@ public class CausalLMOutput {
         this.pastKeyValuesList = pastKeyValues;
     }
 
-    public CausalLMOutput(NDArray logits, NDList... optionalOutput) {
+    public CausalLMOutput(NDArray logits, NDArray hiddenState, NDList pastKeyValueList) {
         this.logits = logits;
-        this.pastKeyValuesList = optionalOutput[0];
-        this.allHiddenStates = optionalOutput[1];
+        this.pastKeyValuesList = pastKeyValueList;
+        this.hiddenStates = hiddenState;
     }
 
     /**
@@ -49,8 +49,8 @@ public class CausalLMOutput {
      *
      * @return the value of allHiddenStates
      */
-    public NDList getAllHiddenStates() {
-        return allHiddenStates;
+    public NDArray getHiddenState() {
+        return hiddenStates;
     }
 
     /**

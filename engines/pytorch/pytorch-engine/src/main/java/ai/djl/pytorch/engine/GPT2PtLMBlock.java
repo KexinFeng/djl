@@ -83,7 +83,7 @@ public class GPT2PtLMBlock extends LMBlock {
 
         NDArray logitsOutput = output.get(0);
         NDList pastKeyValuesOutput = output.subList(1, config.getNumLayers() * 2 + 1);
-        NDList hiddenStatesOutput = output.subNDList(config.getNumLayers() * 2 + 2);
+        NDArray hiddenStatesOutput = output.subNDList(config.getNumLayers() * 2 + 2).get(0);
 
         if (flagDummyKvCach) {
             NDIndex index2 = new NDIndex(":, :, 1:, ...");
@@ -94,6 +94,6 @@ public class GPT2PtLMBlock extends LMBlock {
                                     .collect(Collectors.toList()));
         }
 
-        return new CausalLMOutput(logitsOutput,pastKeyValuesOutput, hiddenStatesOutput);
+        return new CausalLMOutput(logitsOutput, hiddenStatesOutput, pastKeyValuesOutput);
     }
 }

@@ -52,7 +52,7 @@ public abstract class LMBlock extends AbstractBlock {
         CausalLMOutput output =
                 forward(inputs.subList(0, 3), inputs.subNDList(3), inputs.getManager());
         return new NDList(output.getLogits())
-                .addAll(output.getAllHiddenStates()) // allHiddenStates could be null
+                .addAll(new NDList(output.getHiddenState())) // allHiddenStates could be null
                 .addAll(output.getPastKeyValuesList());
     }
 

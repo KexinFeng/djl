@@ -228,7 +228,7 @@ public class LMSearch extends AbstractBlock {
                         new ContrastiveBatchTensorList(
                                 inputIds,
                                 attentionMask,
-                                output.getAllHiddenStates().get(0),
+                                output.getHiddenState(),
                                 lastLogits,
                                 output.getPastKeyValuesList(),
                                 new long[] {});
@@ -291,7 +291,7 @@ public class LMSearch extends AbstractBlock {
                                 topKIds,
                                 searchState.getLogits(),
                                 searchState.getPastHiddenStates(),
-                                candidateOutput.getAllHiddenStates().get(0),
+                                candidateOutput.getHiddenState(),
                                 positionOffset,
                                 config.getAlpha());
 
@@ -416,7 +416,7 @@ public class LMSearch extends AbstractBlock {
 
         // To be concatenated into searchState.pastHiddenStates
         // [batch * k, inputSeq=1, hiddenDim]
-        NDArray newHiddenState = candidateOutput.getAllHiddenStates().get(0);
+        NDArray newHiddenState = candidateOutput.getHiddenState();
         assert newHiddenState.getManager() == manager : "possible leaky memory";
         NDArray nextPastHiddenStates =
                 searchState

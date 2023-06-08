@@ -43,7 +43,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                     new ContrastiveBatchTensorList(
                             inputIds,
                             attentionMask,
-                            output.getAllHiddenStates().get(0),
+                            output.getHiddenState(),
                             lastLogits,
                             output.getPastKeyValuesList(),
                             seqDimOrder);
@@ -51,7 +51,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
 
             // memory management
             NDScope.unregister(output.getPastKeyValuesList());
-            NDScope.unregister(output.getAllHiddenStates().get(0), attentionMask, lastLogits);
+            NDScope.unregister(output.getHiddenState(), attentionMask, lastLogits);
             NDScope.unregister(ret.offSets, ret.batchUid);
 
             return ret;
@@ -118,7 +118,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
                             topKIds,
                             logits,
                             searchState.getPastHiddenStates(),
-                            candidateOutput.getAllHiddenStates().get(0),
+                            candidateOutput.getHiddenState(),
                             seqBatcher.offSets,
                             config.getAlpha());
 
@@ -164,7 +164,7 @@ public class ContrastiveSeqBatchScheduler extends SeqBatchScheduler {
 
             // To be concatenated into searchState.pastHiddenStates
             // [batch * k, inputSeq=1, hiddenDim]
-            NDArray newHiddenState = candidateOutput.getAllHiddenStates().get(0);
+            NDArray newHiddenState = candidateOutput.getHiddenState();
             assert newHiddenState.getManager() == manager : "possible leaky memory";
             NDArray nextPastHiddenStates =
                     searchState
